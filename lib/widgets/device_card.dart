@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -26,6 +27,10 @@ class _DeviceCardState extends State<DeviceCard> {
   Offset? _dragStart;
   Offset? _dragCurrent;
   bool _isDragging = false;
+  Timer? _scrollTimer;
+  bool _scrollActive = false;
+  double _scrollAccumY = 0;
+  double _scrollCx = 0, _scrollCy = 0;
 
   // Map widget coordinate to device physical coordinate
   int _toDevX(double wx, double widgetW) {
@@ -36,6 +41,45 @@ class _DeviceCardState extends State<DeviceCard> {
   int _toDevY(double wy, double widgetH) {
     final phys = widget.device.physicalHeight > 0 ? widget.device.physicalHeight : 2400;
     return (wy / widgetH * phys).round().clamp(0, phys);
+  }
+
+  @override
+  void dispose() {
+    _scrollTimer?.cancel();
+    if (_scrollActive) {
+      PlatformBridge.instance.sendTouchUp(widget.device.deviceId, _scrollCx, _scrollCy);
+    }
+    super.dispose();
+  }
+
+  void _handleScroll(double cx, double cy, double dy) {
+    final devId = widget.device.deviceId;
+    final phys = widget.device.physicalHeight > 0 ? widget.device.physicalHeight : 2400;
+    final step = phys * 0.04; // 4% of screen per tick
+
+    if (!_scrollActive) {
+      _scrollCx = cx;
+      _scrollCy = cy;
+      _scrollAccumY = 0;
+      PlatformBridge.instance.sendTouchDown(devId, cx, cy);
+      _scrollActive = true;
+    }
+
+    // Accumulate scroll delta: dy>0 = scroll down = finger moves UP
+    _scrollAccumY += (dy > 0 ? -step : step);
+    final newY = (_scrollCy + _scrollAccumY).clamp(0.0, phys.toDouble());
+    PlatformBridge.instance.sendTouchMove(devId, _scrollCx, newY);
+
+    // Reset end-timer: release finger after 150ms of no scroll
+    _scrollTimer?.cancel();
+    _scrollTimer = Timer(const Duration(milliseconds: 150), () {
+      if (_scrollActive) {
+        final endY = (_scrollCy + _scrollAccumY).clamp(0.0, phys.toDouble());
+        PlatformBridge.instance.sendTouchUp(devId, _scrollCx, endY);
+        _scrollActive = false;
+        _scrollAccumY = 0;
+      }
+    });
   }
 
   void _sendTap(double wx, double wy, double widgetW, double widgetH) {
@@ -99,7 +143,7 @@ class _DeviceCardState extends State<DeviceCard> {
                     final cy = _toDevY(event.localPosition.dy, wh).toDouble();
                     final dy = event.scrollDelta.dy;
                     if (dy.abs() > 1) {
-                      PlatformBridge.instance.sendScroll(widget.device.deviceId, cx, cy, dy);
+                      _handleScroll(cx, cy, dy);
                     }
                   }
                 },

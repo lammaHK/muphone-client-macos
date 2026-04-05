@@ -25,6 +25,10 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
   String _status = '初始化...';
   bool _connected = false;
   bool _isQualitySwitching = false;
+  Timer? _scrollTimer;
+  bool _scrollActive = false;
+  double _scrollAccumY = 0;
+  double _scrollCx = 0, _scrollCy = 0;
 
   @override
   void initState() {
@@ -34,6 +38,10 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
 
   @override
   void dispose() {
+    _scrollTimer?.cancel();
+    if (_scrollActive) {
+      PlatformBridge.instance.sendTouchUp(widget.deviceId, _scrollCx, _scrollCy);
+    }
     _saveWindowRect();
     _eventSub?.cancel();
     HardwareKeyboard.instance.removeHandler(_onKey);
@@ -177,6 +185,26 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
     }
   }
 
+  void _handleScroll(double cx, double cy, double dy) {
+    final step = _physH * 0.04;
+    if (!_scrollActive) {
+      _scrollCx = cx; _scrollCy = cy; _scrollAccumY = 0;
+      PlatformBridge.instance.sendTouchDown(widget.deviceId, cx, cy);
+      _scrollActive = true;
+    }
+    _scrollAccumY += (dy > 0 ? -step : step);
+    final newY = (_scrollCy + _scrollAccumY).clamp(0.0, _physH.toDouble());
+    PlatformBridge.instance.sendTouchMove(widget.deviceId, _scrollCx, newY);
+    _scrollTimer?.cancel();
+    _scrollTimer = Timer(const Duration(milliseconds: 150), () {
+      if (_scrollActive) {
+        final endY = (_scrollCy + _scrollAccumY).clamp(0.0, _physH.toDouble());
+        PlatformBridge.instance.sendTouchUp(widget.deviceId, _scrollCx, endY);
+        _scrollActive = false; _scrollAccumY = 0;
+      }
+    });
+  }
+
   bool _onKey(KeyEvent event) {
     if (event is KeyUpEvent) return false;
     final key = event.logicalKey;
@@ -315,7 +343,7 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
           final cy = _toY(event.localPosition.dy, wh).toDouble();
           final dy = event.scrollDelta.dy;
           if (dy.abs() > 1) {
-            PlatformBridge.instance.sendScroll(widget.deviceId, cx, cy, dy);
+            _handleScroll(cx, cy, dy);
           }
         }
       },
