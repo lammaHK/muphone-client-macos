@@ -3,13 +3,11 @@ name: Build macOS Client
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:
 
 jobs:
   build-macos:
-    runs-on: macos-14  # Apple Silicon runner (M1)
+    runs-on: macos-14
 
     steps:
       - uses: actions/checkout@v4
@@ -20,65 +18,14 @@ jobs:
           flutter-version: '3.41.6'
           channel: stable
 
-      - name: Flutter doctor
-        run: flutter doctor -v
-
       - name: Install dependencies
         run: flutter pub get
 
       - name: Setup native plugin
         run: |
           cd macos
+          gem install xcodeproj --no-document
           bash setup_plugin.sh
-
-      - name: Add Swift sources to Xcode project
-        run: |
-          cd macos
-          # Use ruby script to add files to Xcode project
-          ruby -e '
-          require "xcodeproj"
-
-          project = Xcodeproj::Project.open("Runner.xcodeproj")
-          target = project.targets.find { |t| t.name == "Runner" }
-          group = project.main_group.find_subpath("Runner", true)
-
-          files = [
-            "MuphoneNativePlugin.swift",
-            "MuphoneEngine.swift",
-            "H264Decoder.swift",
-            "PixelBufferTexture.swift",
-            "NetworkClients.swift"
-          ]
-
-          files.each do |f|
-            path = "Runner/#{f}"
-            next if group.files.any? { |file| file.path == f }
-            ref = group.new_file(f)
-            target.source_build_phase.add_file_reference(ref)
-          end
-
-          project.save
-          puts "Added #{files.length} files to Xcode project"
-          ' 2>/dev/null || echo "xcodeproj gem not found, trying manual method..."
-
-          # Fallback: if xcodeproj gem not available, use sed to add files
-          if ! gem list xcodeproj -i > /dev/null 2>&1; then
-            echo "Installing xcodeproj gem..."
-            gem install xcodeproj
-            ruby -e '
-            require "xcodeproj"
-            project = Xcodeproj::Project.open("Runner.xcodeproj")
-            target = project.targets.find { |t| t.name == "Runner" }
-            group = project.main_group.find_subpath("Runner", true)
-            ["MuphoneNativePlugin.swift","MuphoneEngine.swift","H264Decoder.swift","PixelBufferTexture.swift","NetworkClients.swift"].each do |f|
-              next if group.files.any? { |file| file.path == f }
-              ref = group.new_file(f)
-              target.source_build_phase.add_file_reference(ref)
-            end
-            project.save
-            puts "Added files to Xcode project"
-            '
-          fi
 
       - name: Build macOS release
         run: flutter build macos --release
@@ -86,27 +33,14 @@ jobs:
       - name: Create DMG
         run: |
           APP_PATH="build/macos/Build/Products/Release/muphone_client.app"
-          DMG_PATH="build/MUPhone_Client_macOS.dmg"
-          
-          # Create DMG
           hdiutil create -volname "MUPhone Client" \
             -srcfolder "$APP_PATH" \
             -ov -format UDZO \
-            "$DMG_PATH"
-          
-          echo "DMG created: $DMG_PATH"
-          ls -la "$DMG_PATH"
+            "build/MUPhone_Client_macOS.dmg"
 
-      - name: Upload macOS artifact
+      - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
           name: MUPhone-Client-macOS
           path: build/MUPhone_Client_macOS.dmg
-          retention-days: 30
-
-      - name: Upload .app bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: MUPhone-Client-macOS-app
-          path: build/macos/Build/Products/Release/muphone_client.app
           retention-days: 30

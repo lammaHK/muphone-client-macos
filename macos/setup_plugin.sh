@@ -1,21 +1,48 @@
 #!/bin/bash
-# Run this on macOS to add plugin sources to the Xcode project
+# Copies plugin sources to Runner/ and adds them to the Xcode project
 # Usage: cd client_macos/macos && bash setup_plugin.sh
+
+set -e
 
 PLUGIN_DIR="Plugins/muphone_native/Sources"
 RUNNER_DIR="Runner"
 
 echo "Copying plugin sources to Runner..."
-cp "$PLUGIN_DIR/MuphoneNativePlugin.swift" "$RUNNER_DIR/"
-cp "$PLUGIN_DIR/MuphoneEngine.swift" "$RUNNER_DIR/"
-cp "$PLUGIN_DIR/H264Decoder.swift" "$RUNNER_DIR/"
-cp "$PLUGIN_DIR/PixelBufferTexture.swift" "$RUNNER_DIR/"
-cp "$PLUGIN_DIR/NetworkClients.swift" "$RUNNER_DIR/"
+for f in "$PLUGIN_DIR"/*.swift; do
+    cp "$f" "$RUNNER_DIR/"
+    echo "  Copied: $(basename $f)"
+done
 
-echo "Done! Now open Runner.xcworkspace in Xcode and:"
-echo "1. Right-click Runner group -> Add Files to Runner"
-echo "2. Select all 5 .swift files"
-echo "3. Make sure 'Copy items' is UNCHECKED and target Runner is checked"
-echo "4. Build and run"
+echo "Adding files to Xcode project..."
+gem install xcodeproj --no-document 2>/dev/null || true
+
+ruby << 'RUBY'
+require 'xcodeproj'
+
+project = Xcodeproj::Project.open("Runner.xcodeproj")
+target = project.targets.find { |t| t.name == "Runner" }
+group = project.main_group.find_subpath("Runner", true)
+
+files = %w[
+  MuphoneNativePlugin.swift
+  MuphoneEngine.swift
+  H264Decoder.swift
+  PixelBufferTexture.swift
+  NetworkClients.swift
+]
+
+added = 0
+files.each do |f|
+  next if group.files.any? { |file| file.path == f }
+  ref = group.new_file(f)
+  target.source_build_phase.add_file_reference(ref)
+  added += 1
+  puts "  Added to project: #{f}"
+end
+
+project.save
+puts "Done! Added #{added} new files."
+RUBY
+
 echo ""
-echo "OR use: flutter build macos --release"
+echo "Setup complete. Run: flutter build macos --release"
