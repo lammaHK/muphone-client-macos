@@ -307,22 +307,12 @@ class _MainScreenState extends State<MainScreen> {
 
   }
 
-  final Set<int> _profileSentDevices = {};
-
   Future<void> _subscribeAndSetTexture(PlatformBridge bridge, AppState state, int id, int w, int h) async {
     final subW = w > 0 ? w : 405;
     final subH = h > 0 ? h : 720;
     final textureId = await bridge.subscribeDevice(id, width: subW, height: subH);
     if (textureId != null) {
       state.updateDevice(id, (d) => d.copyWith(textureId: textureId));
-      // Send profile once per device (not on resubscribe from quality switch)
-      if (!_profileSentDevices.contains(id)) {
-        _profileSentDevices.add(id);
-        final dev = state.getDevice(id);
-        final q = dev != null ? state.getDeviceQuality(dev.serial) : 'hd';
-        final profile = (q == 'fhd') ? 'fhd' : _desiredProfile;
-        bridge.setFpsProfile(id, profile);
-      }
     }
   }
 
