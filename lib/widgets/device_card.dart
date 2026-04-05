@@ -143,7 +143,7 @@ class _DeviceCardState extends State<DeviceCard> {
                 },
                 child: Texture(textureId: widget.device.textureId!),
               ),
-              // Device name overlay ??top, right-aligned
+              // Device name overlay — top, right-aligned
               Positioned(
                 left: 0, right: 0, top: 0,
                 child: Container(
@@ -176,7 +176,7 @@ class _DeviceCardState extends State<DeviceCard> {
               Icon(Icons.phone_android, size: 28,
                 color: MUPhoneColors.textDisabled.withValues(alpha: 0.5)),
             const SizedBox(height: 6),
-            Text(isOnline ? '建�??�面�?..' : widget.device.displayName,
+            Text(isOnline ? '建構畫面中...' : widget.device.displayName,
               style: const TextStyle(fontSize: 10, color: MUPhoneColors.textSecondary),
               overflow: TextOverflow.ellipsis),
           ],
@@ -203,7 +203,7 @@ class _DeviceCardState extends State<DeviceCard> {
           SizedBox(width: 22, height: 22, child: CircularProgressIndicator(
             strokeWidth: 2, color: MUPhoneColors.primary)),
           SizedBox(height: 8),
-          Text('?��??�質�?..', style: TextStyle(fontSize: 10, color: MUPhoneColors.textSecondary)),
+          Text('切換畫質中...', style: TextStyle(fontSize: 10, color: MUPhoneColors.textSecondary)),
         ]),
       ),
     );
@@ -216,7 +216,7 @@ class _DeviceCardState extends State<DeviceCard> {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.open_in_new, size: 24, color: MUPhoneColors.textDisabled),
           SizedBox(height: 6),
-          Text('已�???, style: TextStyle(fontSize: 11, color: MUPhoneColors.textDisabled)),
+          Text('已分離', style: TextStyle(fontSize: 11, color: MUPhoneColors.textDisabled)),
         ]),
       ),
     );
