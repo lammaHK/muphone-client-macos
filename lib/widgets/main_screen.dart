@@ -28,7 +28,6 @@ class _MainScreenState extends State<MainScreen> {
   Timer? _saveTimer;
   String _desiredProfile = 'full';
   final Map<int, int> _qualitySwitchGen = {};
-  bool _initialProfileSent = false;
 
   @override
   void initState() {
@@ -306,16 +305,9 @@ class _MainScreenState extends State<MainScreen> {
       }
     }
 
-    // Send initial profile once (GPU-based default for all devices without explicit user choice)
-    if (!_initialProfileSent && state.devices.isNotEmpty) {
-      _initialProfileSent = true;
-      for (final dev in state.devices) {
-        final q = state.getDeviceQuality(dev.serial);
-        final profile = (q == 'fhd') ? 'fhd' : _desiredProfile;
-        bridge.setFpsProfile(dev.deviceId, profile);
-      }
-    }
   }
+
+  final Set<int> _profileSentDevices = {};
 
   Future<void> _subscribeAndSetTexture(PlatformBridge bridge, AppState state, int id, int w, int h) async {
     final subW = w > 0 ? w : 405;
@@ -323,6 +315,14 @@ class _MainScreenState extends State<MainScreen> {
     final textureId = await bridge.subscribeDevice(id, width: subW, height: subH);
     if (textureId != null) {
       state.updateDevice(id, (d) => d.copyWith(textureId: textureId));
+      // Send profile once per device (not on resubscribe from quality switch)
+      if (!_profileSentDevices.contains(id)) {
+        _profileSentDevices.add(id);
+        final dev = state.getDevice(id);
+        final q = dev != null ? state.getDeviceQuality(dev.serial) : 'hd';
+        final profile = (q == 'fhd') ? 'fhd' : _desiredProfile;
+        bridge.setFpsProfile(id, profile);
+      }
     }
   }
 
