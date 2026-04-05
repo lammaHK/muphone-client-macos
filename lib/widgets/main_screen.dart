@@ -28,6 +28,7 @@ class _MainScreenState extends State<MainScreen> {
   Timer? _saveTimer;
   String _desiredProfile = 'full';
   final Map<int, int> _qualitySwitchGen = {};
+  final Set<int> _fhdProfileSent = {};
 
   @override
   void initState() {
@@ -305,6 +306,14 @@ class _MainScreenState extends State<MainScreen> {
       }
     }
 
+    // Send FHD profile for devices that were saved as FHD (one-time, causes fresh IDR)
+    for (final dev in state.devices) {
+      final q = state.getDeviceQuality(dev.serial);
+      if (q == 'fhd' && !_fhdProfileSent.contains(dev.deviceId)) {
+        _fhdProfileSent.add(dev.deviceId);
+        bridge.setFpsProfile(dev.deviceId, 'fhd');
+      }
+    }
   }
 
   Future<void> _subscribeAndSetTexture(PlatformBridge bridge, AppState state, int id, int w, int h) async {
