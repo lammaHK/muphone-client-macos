@@ -143,13 +143,14 @@ class _DeviceCardState extends State<DeviceCard> {
                 },
                 child: Texture(textureId: widget.device.textureId!),
               ),
-              // Device name overlay
+              // Device name overlay ??top, right-aligned
               Positioned(
-                left: 0, right: 0, bottom: 0,
+                left: 0, right: 0, top: 0,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   color: Colors.black54,
                   child: Text(widget.device.displayName,
+                    textAlign: TextAlign.right,
                     style: const TextStyle(fontSize: 9, color: MUPhoneColors.textSecondary),
                     overflow: TextOverflow.ellipsis),
                 ),

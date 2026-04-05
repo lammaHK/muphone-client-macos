@@ -12,6 +12,8 @@ import 'settings_modal.dart';
 const int _kAndroidEnter   = 66;
 const int _kAndroidBack    = 4;
 const int _kAndroidDel     = 67; // Backspace
+const int _kAndroidSpace   = 62;
+const int _kAndroidTab     = 61;
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -124,6 +126,10 @@ class _MainScreenState extends State<MainScreen> {
         key == LogicalKeyboardKey.numpadEnter ||
         key == LogicalKeyboardKey.space) {
       bridge.sendKey(devId, _kAndroidEnter);
+      return true;
+    }
+    if (key == LogicalKeyboardKey.tab) {
+      bridge.sendKey(devId, _kAndroidTab);
       return true;
     }
 
@@ -331,7 +337,7 @@ class _MainScreenState extends State<MainScreen> {
     }
     bridge.unsubscribeDevice(id);
     state.updateDevice(id, (d) => d.copyWith(textureId: null));
-    Future.delayed(const Duration(milliseconds: 2000), () async {
+    Future.delayed(const Duration(milliseconds: 800), () async {
       if (_qualitySwitchGen[id] != gen) return;
       final d2 = state.getDevice(id);
       if (d2 != null && !state.isDeviceHidden(d2.serial)) {

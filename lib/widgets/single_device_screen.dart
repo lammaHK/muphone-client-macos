@@ -119,7 +119,7 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
     PlatformBridge.instance.unsubscribeDevice(widget.deviceId);
     setState(() { _textureId = null; _status = '切換畫質中...'; });
 
-    Future.delayed(const Duration(milliseconds: 1500), () async {
+    Future.delayed(const Duration(milliseconds: 800), () async {
       if (!mounted) return;
       final tid = await PlatformBridge.instance.subscribeDevice(
           widget.deviceId, width: 0, height: 0);
@@ -281,22 +281,20 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
                       ),
                     ),
                   ),
-              ],
-            ),
-          ),
-          // Alias bar (same as grid device cards)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            color: Colors.black54,
-            child: Row(
-              children: [
-                Expanded(
+              // Alias bar — top, right-aligned
+              Positioned(
+                left: 0, right: 0, top: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  color: Colors.black54,
                   child: Text(
                     _serial.isNotEmpty ? _serial : 'Device ${widget.deviceId}',
+                    textAlign: TextAlign.right,
                     style: const TextStyle(fontSize: 10, color: MUPhoneColors.textSecondary),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+              ),
               ],
             ),
           ),
