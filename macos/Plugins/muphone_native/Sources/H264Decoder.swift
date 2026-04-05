@@ -43,18 +43,19 @@ class H264Decoder {
         var avccData = withUnsafeBytes(of: nalLength) { Data($0) }
         avccData.append(nalPayload)
 
-        // Create CMBlockBuffer
+        // Create CMBlockBuffer from a copy (avoids exclusive access conflict)
         var blockBuffer: CMBlockBuffer?
+        let dataLen = avccData.count
         avccData.withUnsafeMutableBytes { rawBuf in
             guard let baseAddr = rawBuf.baseAddress else { return }
             CMBlockBufferCreateWithMemoryBlock(
                 allocator: kCFAllocatorDefault,
                 memoryBlock: baseAddr,
-                blockLength: avccData.count,
+                blockLength: dataLen,
                 blockAllocator: kCFAllocatorNull,
                 customBlockSource: nil,
                 offsetToData: 0,
-                dataLength: avccData.count,
+                dataLength: dataLen,
                 flags: 0,
                 blockBufferOut: &blockBuffer
             )
