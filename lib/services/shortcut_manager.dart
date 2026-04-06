@@ -25,6 +25,34 @@ class DeselectAllIntent extends Intent {
   const DeselectAllIntent();
 }
 
+LogicalKeyboardKey _keyFromString(String key) {
+  const map = {
+    '=': LogicalKeyboardKey.equal,
+    '`': LogicalKeyboardKey.backquote,
+    '-': LogicalKeyboardKey.minus,
+    '[': LogicalKeyboardKey.bracketLeft,
+    ']': LogicalKeyboardKey.bracketRight,
+    ';': LogicalKeyboardKey.semicolon,
+    '/': LogicalKeyboardKey.slash,
+    '.': LogicalKeyboardKey.period,
+    ',': LogicalKeyboardKey.comma,
+    '\\': LogicalKeyboardKey.backslash,
+    'f1': LogicalKeyboardKey.f1,
+    'f2': LogicalKeyboardKey.f2,
+    'f3': LogicalKeyboardKey.f3,
+    'f4': LogicalKeyboardKey.f4,
+    'f5': LogicalKeyboardKey.f5,
+    'f6': LogicalKeyboardKey.f6,
+    'f7': LogicalKeyboardKey.f7,
+    'f8': LogicalKeyboardKey.f8,
+    'f9': LogicalKeyboardKey.f9,
+    'f10': LogicalKeyboardKey.f10,
+    'f11': LogicalKeyboardKey.f11,
+    'f12': LogicalKeyboardKey.f12,
+  };
+  return map[key.toLowerCase()] ?? LogicalKeyboardKey.equal;
+}
+
 class MUPhoneShortcutManager extends StatelessWidget {
   const MUPhoneShortcutManager({super.key, required this.child});
 
@@ -32,75 +60,60 @@ class MUPhoneShortcutManager extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Shortcuts(
-      shortcuts: <ShortcutActivator, Intent>{
-        const SingleActivator(LogicalKeyboardKey.equal):
-            const OpenSettingsIntent(),
-        const SingleActivator(LogicalKeyboardKey.digit1, control: true):
-            const FocusDeviceIntent(0),
-        const SingleActivator(LogicalKeyboardKey.digit2, control: true):
-            const FocusDeviceIntent(1),
-        const SingleActivator(LogicalKeyboardKey.digit3, control: true):
-            const FocusDeviceIntent(2),
-        const SingleActivator(LogicalKeyboardKey.digit4, control: true):
-            const FocusDeviceIntent(3),
-        const SingleActivator(LogicalKeyboardKey.digit5, control: true):
-            const FocusDeviceIntent(4),
-        const SingleActivator(LogicalKeyboardKey.digit6, control: true):
-            const FocusDeviceIntent(5),
-        const SingleActivator(LogicalKeyboardKey.digit7, control: true):
-            const FocusDeviceIntent(6),
-        const SingleActivator(LogicalKeyboardKey.digit8, control: true):
-            const FocusDeviceIntent(7),
-        const SingleActivator(LogicalKeyboardKey.digit9, control: true):
-            const FocusDeviceIntent(8),
-        const SingleActivator(LogicalKeyboardKey.escape):
-            const EscapeIntent(),
-        const SingleActivator(LogicalKeyboardKey.keyA, control: true):
-            const SelectAllIntent(),
-        const SingleActivator(LogicalKeyboardKey.keyD, control: true):
-            const DeselectAllIntent(),
+    return Consumer<AppState>(
+      builder: (context, state, _) {
+        final settingsKey = _keyFromString(state.settingsShortcutKey);
+        return Shortcuts(
+          shortcuts: <ShortcutActivator, Intent>{
+            SingleActivator(settingsKey): const OpenSettingsIntent(),
+            const SingleActivator(LogicalKeyboardKey.digit1, control: true): const FocusDeviceIntent(0),
+            const SingleActivator(LogicalKeyboardKey.digit2, control: true): const FocusDeviceIntent(1),
+            const SingleActivator(LogicalKeyboardKey.digit3, control: true): const FocusDeviceIntent(2),
+            const SingleActivator(LogicalKeyboardKey.digit4, control: true): const FocusDeviceIntent(3),
+            const SingleActivator(LogicalKeyboardKey.digit5, control: true): const FocusDeviceIntent(4),
+            const SingleActivator(LogicalKeyboardKey.digit6, control: true): const FocusDeviceIntent(5),
+            const SingleActivator(LogicalKeyboardKey.digit7, control: true): const FocusDeviceIntent(6),
+            const SingleActivator(LogicalKeyboardKey.digit8, control: true): const FocusDeviceIntent(7),
+            const SingleActivator(LogicalKeyboardKey.digit9, control: true): const FocusDeviceIntent(8),
+            const SingleActivator(LogicalKeyboardKey.escape): const EscapeIntent(),
+            const SingleActivator(LogicalKeyboardKey.keyA, control: true): const SelectAllIntent(),
+            const SingleActivator(LogicalKeyboardKey.keyD, control: true): const DeselectAllIntent(),
+          },
+          child: Actions(
+            actions: <Type, Action<Intent>>{
+              OpenSettingsIntent: CallbackAction<OpenSettingsIntent>(onInvoke: (intent) {
+                showDialog(
+                  context: context,
+                  builder: (_) => ChangeNotifierProvider.value(
+                    value: state,
+                    child: const SettingsModal(),
+                  ),
+                );
+                return null;
+              }),
+              FocusDeviceIntent: CallbackAction<FocusDeviceIntent>(onInvoke: (intent) {
+                if (intent.slotIndex < state.devices.length) {
+                  state.setFocused(state.devices[intent.slotIndex].deviceId);
+                }
+                return null;
+              }),
+              EscapeIntent: CallbackAction<EscapeIntent>(onInvoke: (intent) {
+                state.clearFocusAndPanels();
+                return null;
+              }),
+              SelectAllIntent: CallbackAction<SelectAllIntent>(onInvoke: (intent) {
+                state.selectAll();
+                return null;
+              }),
+              DeselectAllIntent: CallbackAction<DeselectAllIntent>(onInvoke: (intent) {
+                state.deselectAll();
+                return null;
+              }),
+            },
+            child: Focus(autofocus: true, child: child),
+          ),
+        );
       },
-      child: Actions(
-        actions: <Type, Action<Intent>>{
-          OpenSettingsIntent:
-              CallbackAction<OpenSettingsIntent>(onInvoke: (intent) {
-            showDialog(
-              context: context,
-              builder: (_) => ChangeNotifierProvider.value(
-                value: context.read<AppState>(),
-                child: const SettingsModal(),
-              ),
-            );
-            return null;
-          }),
-          FocusDeviceIntent:
-              CallbackAction<FocusDeviceIntent>(onInvoke: (intent) {
-            final state = context.read<AppState>();
-            if (intent.slotIndex < state.devices.length) {
-              state.setFocused(state.devices[intent.slotIndex].deviceId);
-            }
-            return null;
-          }),
-          EscapeIntent: CallbackAction<EscapeIntent>(onInvoke: (intent) {
-            context.read<AppState>().clearFocusAndPanels();
-            return null;
-          }),
-          SelectAllIntent: CallbackAction<SelectAllIntent>(onInvoke: (intent) {
-            context.read<AppState>().selectAll();
-            return null;
-          }),
-          DeselectAllIntent:
-              CallbackAction<DeselectAllIntent>(onInvoke: (intent) {
-            context.read<AppState>().deselectAll();
-            return null;
-          }),
-        },
-        child: Focus(
-          autofocus: true,
-          child: child,
-        ),
-      ),
     );
   }
 }

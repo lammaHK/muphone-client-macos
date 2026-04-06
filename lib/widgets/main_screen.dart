@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../services/persistence.dart';
 import '../services/platform_bridge.dart';
+import '../theme/muphone_theme.dart';
 import 'device_grid.dart';
 import 'settings_modal.dart';
 
@@ -76,6 +77,9 @@ class _MainScreenState extends State<MainScreen> {
       final raw = data['shortcuts'] as List<dynamic>? ?? [];
       state.setShortcuts(raw.map((e) => ShortcutAction.fromJson(Map<String, dynamic>.from(e as Map))).toList());
     }
+    if (data.containsKey('settingsShortcutKey')) {
+      state.setSettingsShortcutKey(data['settingsShortcutKey'] as String? ?? '=');
+    }
   }
 
   void _debouncedSave(AppState state) {
@@ -90,6 +94,7 @@ class _MainScreenState extends State<MainScreen> {
         'deviceQuality': state.deviceQuality,
         'deviceAliases': state.deviceAliases,
         'shortcuts': state.shortcuts.map((s) => s.toJson()).toList(),
+        'settingsShortcutKey': state.settingsShortcutKey,
       });
     });
   }
@@ -261,7 +266,65 @@ class _MainScreenState extends State<MainScreen> {
             state.updateDevice(id, (d) => d.copyWith(phase: DevicePhase.online, lockOwner: null));
           }
         }
+
+      case 'close_requested':
+        _showCloseConfirmation();
     }
+  }
+
+  void _showCloseConfirmation() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black54,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: MUPhoneColors.card,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: MUPhoneColors.border),
+        ),
+        titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+        contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+        title: Row(children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: MUPhoneColors.statusFailed.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(Icons.power_settings_new, size: 18, color: MUPhoneColors.statusFailed),
+          ),
+          const SizedBox(width: 12),
+          Text('關閉 MUPhone', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: MUPhoneColors.textPrimary)),
+        ]),
+        content: Text(
+          '確定要關閉客戶端嗎？\n所有裝置連接將會中斷。',
+          style: TextStyle(fontSize: 12, color: MUPhoneColors.textSecondary, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('取消', style: TextStyle(fontSize: 12, color: MUPhoneColors.textSecondary)),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              PlatformBridge.instance.confirmExit();
+            },
+            icon: const Icon(Icons.power_settings_new, size: 14),
+            label: const Text('關閉'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: MUPhoneColors.statusFailed,
+              foregroundColor: MUPhoneColors.textPrimary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+              textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _onDeviceList(Map<String, dynamic> event, AppState state) {

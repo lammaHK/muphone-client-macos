@@ -153,6 +153,7 @@ class AppState extends ChangeNotifier {
   final Set<int> _selectedDeviceIds = {};
   bool _deviceListPanelOpen = false;
   String _serverHost = '127.0.0.1';
+  String _settingsShortcutKey = '=';
   String? _activeSerial;
   Set<String> _hiddenSerials = {};
   Map<String, String> _deviceQuality = {};  // serial → 'hd' or 'fhd'
@@ -169,6 +170,7 @@ class AppState extends ChangeNotifier {
   Set<int> get selectedDeviceIds => Set.unmodifiable(_selectedDeviceIds);
   bool get deviceListPanelOpen => _deviceListPanelOpen;
   String get serverHost => _serverHost;
+  String get settingsShortcutKey => _settingsShortcutKey;
   String? get activeSerial => _activeSerial;
   Set<String> get hiddenSerials => Set.unmodifiable(_hiddenSerials);
   Map<String, String> get deviceQuality => Map.unmodifiable(_deviceQuality);
@@ -424,6 +426,12 @@ class AppState extends ChangeNotifier {
   void setServerHost(String host) {
     if (_serverHost == host) return;
     _serverHost = host;
+    notifyListeners();
+  }
+
+  void setSettingsShortcutKey(String key) {
+    if (_settingsShortcutKey == key) return;
+    _settingsShortcutKey = key;
     notifyListeners();
   }
 

@@ -47,6 +47,12 @@ class PlatformBridge {
     }
   }
 
+  Future<void> confirmExit() async {
+    try {
+      await _methodChannel.invokeMethod('confirm_exit');
+    } catch (_) {}
+  }
+
   Future<int?> subscribeDevice(int deviceId, {int width = 1080, int height = 1920}) async {
     try {
       final result = await _methodChannel.invokeMethod('subscribe_device', {

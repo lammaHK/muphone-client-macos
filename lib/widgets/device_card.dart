@@ -190,17 +190,19 @@ class _DeviceCardState extends State<DeviceCard> {
                 },
                 child: Texture(textureId: widget.device.textureId!),
               ),
-              // Loading overlay (covers texture until first clean frame arrives)
               if (!widget.device.hasFrames)
                 Positioned.fill(
                   child: Container(
                     color: MUPhoneColors.card,
-                    child: const Center(
+                    child: Center(
                       child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        SizedBox(width: 20, height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: MUPhoneColors.primary)),
-                        SizedBox(height: 6),
-                        Text('建構畫面中...', style: TextStyle(fontSize: 10, color: MUPhoneColors.textSecondary)),
+                        SizedBox(width: 22, height: 22, child: Stack(alignment: Alignment.center, children: [
+                          const SizedBox(width: 20, height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 1.5, color: MUPhoneColors.primary)),
+                          Icon(Icons.videocam_outlined, size: 10, color: MUPhoneColors.primary.withValues(alpha: 0.6)),
+                        ])),
+                        const SizedBox(height: 6),
+                        const Text('建構畫面中...', style: TextStyle(fontSize: 10, color: MUPhoneColors.textSecondary)),
                       ]),
                     ),
                   ),
@@ -211,23 +213,28 @@ class _DeviceCardState extends State<DeviceCard> {
       );
     }
 
-    final isOnline = widget.device.phase == DevicePhase.online ||
-                     widget.device.phase == DevicePhase.locked;
+    final phase = widget.device.phase;
+    final (icon, text, color, animate) = switch (phase) {
+      DevicePhase.starting => (Icons.phone_android, '啟動中...', MUPhoneColors.statusLockedOther, true),
+      DevicePhase.online || DevicePhase.locked => (Icons.sync, '連接中...', MUPhoneColors.primary, true),
+      DevicePhase.failed => (Icons.error_outline, '連接失敗', MUPhoneColors.statusFailed, false),
+      DevicePhase.offline => (Icons.phone_android, widget.device.displayName, MUPhoneColors.textDisabled, false),
+    };
     return Container(
       color: Colors.transparent,
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (isOnline)
-              const SizedBox(width: 20, height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, color: MUPhoneColors.primary))
+            if (animate)
+              SizedBox(width: 24, height: 24, child: Stack(alignment: Alignment.center, children: [
+                SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 1.5, color: color.withValues(alpha: 0.4))),
+                Icon(icon, size: 14, color: color),
+              ]))
             else
-              Icon(Icons.phone_android, size: 28,
-                color: MUPhoneColors.textDisabled.withValues(alpha: 0.5)),
+              Icon(icon, size: 26, color: color.withValues(alpha: 0.5)),
             const SizedBox(height: 6),
-            Text(isOnline ? '建構畫面中...' : widget.device.displayName,
-              style: const TextStyle(fontSize: 10, color: MUPhoneColors.textSecondary),
+            Text(text, style: TextStyle(fontSize: 10, color: color.withValues(alpha: 0.8)),
               overflow: TextOverflow.ellipsis),
           ],
         ),

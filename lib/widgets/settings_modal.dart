@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../services/platform_bridge.dart';
@@ -76,20 +77,25 @@ class _Header extends StatelessWidget {
           const SizedBox(width: 12),
           const Text('設定', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: MUPhoneColors.textPrimary)),
           const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: MUPhoneColors.background,
+          Material(
+            color: MUPhoneColors.background,
+            borderRadius: BorderRadius.circular(4),
+            child: InkWell(
               borderRadius: BorderRadius.circular(4),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.keyboard, size: 11, color: MUPhoneColors.textDisabled.withValues(alpha: 0.6)),
-                const SizedBox(width: 4),
-                Text('=', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
-                  color: MUPhoneColors.textDisabled.withValues(alpha: 0.6))),
-              ],
+              onTap: () => _showShortcutKeyCaptureDialog(context, state),
+              hoverColor: MUPhoneColors.hover,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.keyboard, size: 11, color: MUPhoneColors.textDisabled.withValues(alpha: 0.6)),
+                    const SizedBox(width: 4),
+                    Text(state.settingsShortcutKey, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
+                      color: MUPhoneColors.textDisabled.withValues(alpha: 0.6))),
+                  ],
+                ),
+              ),
             ),
           ),
           const SizedBox(width: 10),
@@ -108,6 +114,94 @@ class _Header extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  void _showShortcutKeyCaptureDialog(BuildContext context, AppState state) {
+    showDialog(
+      context: context,
+      builder: (ctx) => _KeyCaptureDialog(
+        currentKey: state.settingsShortcutKey,
+        onKeySelected: (key) => state.setSettingsShortcutKey(key),
+      ),
+    );
+  }
+}
+
+class _KeyCaptureDialog extends StatefulWidget {
+  const _KeyCaptureDialog({required this.currentKey, required this.onKeySelected});
+  final String currentKey;
+  final ValueChanged<String> onKeySelected;
+
+  @override
+  State<_KeyCaptureDialog> createState() => _KeyCaptureDialogState();
+}
+
+class _KeyCaptureDialogState extends State<_KeyCaptureDialog> {
+  String? _captured;
+  final _focusNode = FocusNode();
+
+  @override
+  void dispose() { _focusNode.dispose(); super.dispose(); }
+
+  String? _keyLabel(KeyEvent event) {
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.enter) return null;
+    final allowed = {
+      LogicalKeyboardKey.equal: '=', LogicalKeyboardKey.minus: '-',
+      LogicalKeyboardKey.backquote: '`', LogicalKeyboardKey.bracketLeft: '[',
+      LogicalKeyboardKey.bracketRight: ']', LogicalKeyboardKey.semicolon: ';',
+      LogicalKeyboardKey.slash: '/', LogicalKeyboardKey.period: '.',
+      LogicalKeyboardKey.comma: ',', LogicalKeyboardKey.backslash: '\\',
+      LogicalKeyboardKey.f1: 'F1', LogicalKeyboardKey.f2: 'F2',
+      LogicalKeyboardKey.f3: 'F3', LogicalKeyboardKey.f4: 'F4',
+      LogicalKeyboardKey.f5: 'F5', LogicalKeyboardKey.f6: 'F6',
+      LogicalKeyboardKey.f7: 'F7', LogicalKeyboardKey.f8: 'F8',
+      LogicalKeyboardKey.f9: 'F9', LogicalKeyboardKey.f10: 'F10',
+      LogicalKeyboardKey.f11: 'F11', LogicalKeyboardKey.f12: 'F12',
+    };
+    return allowed[key];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: MUPhoneColors.card,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: MUPhoneColors.border)),
+      title: const Text('設定快捷鍵', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: MUPhoneColors.textPrimary)),
+      content: KeyboardListener(
+        focusNode: _focusNode,
+        autofocus: true,
+        onKeyEvent: (event) {
+          if (event is! KeyDownEvent) return;
+          final label = _keyLabel(event);
+          if (label != null) setState(() => _captured = label);
+        },
+        child: Container(
+          width: 200, height: 80,
+          decoration: BoxDecoration(
+            color: MUPhoneColors.background,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: _captured != null ? MUPhoneColors.primary : MUPhoneColors.border),
+          ),
+          child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(_captured ?? widget.currentKey,
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700,
+                color: _captured != null ? MUPhoneColors.primary : MUPhoneColors.textDisabled)),
+            const SizedBox(height: 4),
+            Text(_captured != null ? '已捕獲按鍵' : '按下新的快捷鍵...',
+              style: const TextStyle(fontSize: 10, color: MUPhoneColors.textSecondary)),
+          ])),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+        TextButton(onPressed: _captured != null ? () {
+          widget.onKeySelected(_captured!);
+          Navigator.pop(context);
+        } : null, child: const Text('確認')),
+      ],
     );
   }
 }
