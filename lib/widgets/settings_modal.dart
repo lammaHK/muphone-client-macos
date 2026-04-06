@@ -32,6 +32,8 @@ class SettingsModal extends StatelessWidget {
                       const SizedBox(height: 22),
                       _GridSection(state: state),
                       const SizedBox(height: 22),
+                      _ShortcutSection(state: state),
+                      const SizedBox(height: 22),
                       _DeviceListSection(state: state),
                     ],
                   ),
@@ -605,6 +607,285 @@ class _StepBtn extends StatelessWidget {
         onTap: enabled ? onPressed : null,
         child: SizedBox(width: 36, height: 36,
           child: Icon(icon, size: 14, color: enabled ? MUPhoneColors.textSecondary : MUPhoneColors.textDisabled)),
+      ),
+    );
+  }
+}
+
+// ─── Shortcut Section ───
+
+class _ShortcutSection extends StatefulWidget {
+  const _ShortcutSection({required this.state});
+  final AppState state;
+
+  @override
+  State<_ShortcutSection> createState() => _ShortcutSectionState();
+}
+
+class _ShortcutSectionState extends State<_ShortcutSection> {
+  static const _iconOptions = [
+    'language', 'chat', 'camera_alt', 'settings', 'apps', 'phone',
+    'message', 'map', 'shopping_cart', 'music_note', 'video_call',
+    'terminal', 'play_arrow', 'folder', 'email', 'search', 'home', 'star',
+  ];
+
+  void _addShortcut() {
+    _showEditor(context, null, null);
+  }
+
+  void _editShortcut(int index) {
+    _showEditor(context, index, widget.state.shortcuts[index]);
+  }
+
+  void _deleteShortcut(int index) {
+    final list = List<ShortcutAction>.from(widget.state.shortcuts);
+    list.removeAt(index);
+    widget.state.setShortcuts(list);
+  }
+
+  void _reorder(int oldIndex, int newIndex) {
+    if (newIndex > oldIndex) newIndex--;
+    final list = List<ShortcutAction>.from(widget.state.shortcuts);
+    final item = list.removeAt(oldIndex);
+    list.insert(newIndex, item);
+    widget.state.setShortcuts(list);
+  }
+
+  void _showEditor(BuildContext context, int? index, ShortcutAction? existing) {
+    final labelCtl = TextEditingController(text: existing?.label ?? '');
+    final cmdCtl = TextEditingController(text: existing?.command ?? '');
+    String selectedType = existing?.type ?? 'app';
+    String selectedIcon = existing?.icon ?? 'apps';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx2, setDialogState) {
+        return AlertDialog(
+          backgroundColor: MUPhoneColors.card,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10),
+            side: const BorderSide(color: MUPhoneColors.border)),
+          title: Text(index != null ? '編輯快捷鍵' : '新增快捷鍵',
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: MUPhoneColors.textPrimary)),
+          content: SizedBox(
+            width: 320,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('類型', style: TextStyle(fontSize: 10, color: MUPhoneColors.textDisabled)),
+                const SizedBox(height: 4),
+                Row(children: [
+                  _TypeChip(label: '應用程式', value: 'app', selected: selectedType == 'app',
+                    onTap: () => setDialogState(() => selectedType = 'app')),
+                  const SizedBox(width: 6),
+                  _TypeChip(label: 'ADB 指令', value: 'adb', selected: selectedType == 'adb',
+                    onTap: () => setDialogState(() => selectedType = 'adb')),
+                ]),
+                const SizedBox(height: 12),
+                const Text('名稱', style: TextStyle(fontSize: 10, color: MUPhoneColors.textDisabled)),
+                const SizedBox(height: 4),
+                _dialogInput(labelCtl, selectedType == 'app' ? 'Chrome' : 'Screenshot'),
+                const SizedBox(height: 12),
+                Text(selectedType == 'app' ? '套件名稱' : 'Shell 指令',
+                  style: const TextStyle(fontSize: 10, color: MUPhoneColors.textDisabled)),
+                const SizedBox(height: 4),
+                _dialogInput(cmdCtl, selectedType == 'app' ? 'com.android.chrome' : 'screencap -p /sdcard/sc.png'),
+                const SizedBox(height: 12),
+                const Text('圖標', style: TextStyle(fontSize: 10, color: MUPhoneColors.textDisabled)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 4, runSpacing: 4,
+                  children: _iconOptions.map((name) {
+                    final active = selectedIcon == name;
+                    return GestureDetector(
+                      onTap: () => setDialogState(() => selectedIcon = name),
+                      child: Container(
+                        width: 28, height: 28,
+                        decoration: BoxDecoration(
+                          color: active ? MUPhoneColors.primary.withValues(alpha: 0.2) : MUPhoneColors.background,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: active ? MUPhoneColors.primary : MUPhoneColors.border.withValues(alpha: 0.3)),
+                        ),
+                        child: Icon(ShortcutAction.iconData(name), size: 14,
+                          color: active ? MUPhoneColors.primary : MUPhoneColors.textSecondary),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            TextButton(onPressed: () {
+              final label = labelCtl.text.trim();
+              final cmd = cmdCtl.text.trim();
+              if (label.isEmpty || cmd.isEmpty) return;
+              final action = ShortcutAction(label: label, icon: selectedIcon, type: selectedType, command: cmd);
+              final list = List<ShortcutAction>.from(widget.state.shortcuts);
+              if (index != null) {
+                list[index] = action;
+              } else {
+                list.add(action);
+              }
+              widget.state.setShortcuts(list);
+              Navigator.pop(ctx);
+            }, child: const Text('確認')),
+          ],
+        );
+      }),
+    );
+  }
+
+  Widget _dialogInput(TextEditingController ctrl, String hint) {
+    return SizedBox(
+      height: 32,
+      child: TextField(
+        controller: ctrl,
+        style: const TextStyle(fontSize: 12, color: MUPhoneColors.textPrimary),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(color: MUPhoneColors.textDisabled.withValues(alpha: 0.4)),
+          filled: true, fillColor: MUPhoneColors.background,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(5),
+            borderSide: const BorderSide(color: MUPhoneColors.border, width: 0.5)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(5),
+            borderSide: const BorderSide(color: MUPhoneColors.border, width: 0.5)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(5),
+            borderSide: const BorderSide(color: MUPhoneColors.primary, width: 1)),
+          isDense: true,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final shortcuts = widget.state.shortcuts;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle(icon: Icons.bolt, title: '快捷鍵',
+          trailing: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(4),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(4),
+              onTap: _addShortcut,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.add, size: 12, color: MUPhoneColors.primary),
+                  SizedBox(width: 2),
+                  Text('新增', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: MUPhoneColors.primary)),
+                ]),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        _SectionBox(
+          child: shortcuts.isEmpty
+              ? const Center(
+                  heightFactor: 2,
+                  child: Text('尚未設定快捷鍵', style: TextStyle(fontSize: 11, color: MUPhoneColors.textDisabled)))
+              : ReorderableListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  buildDefaultDragHandles: false,
+                  itemCount: shortcuts.length,
+                  onReorder: _reorder,
+                  itemBuilder: (ctx, i) {
+                    final s = shortcuts[i];
+                    return _ShortcutRow(
+                      key: ValueKey('shortcut_$i'),
+                      index: i,
+                      action: s,
+                      onEdit: () => _editShortcut(i),
+                      onDelete: () => _deleteShortcut(i),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TypeChip extends StatelessWidget {
+  const _TypeChip({required this.label, required this.value, required this.selected, required this.onTap});
+  final String label, value;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        decoration: BoxDecoration(
+          color: selected ? MUPhoneColors.primary.withValues(alpha: 0.15) : MUPhoneColors.background,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: selected ? MUPhoneColors.primary.withValues(alpha: 0.4) : MUPhoneColors.border.withValues(alpha: 0.3)),
+        ),
+        child: Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500,
+          color: selected ? MUPhoneColors.primary : MUPhoneColors.textSecondary)),
+      ),
+    );
+  }
+}
+
+class _ShortcutRow extends StatelessWidget {
+  const _ShortcutRow({super.key, required this.index, required this.action, required this.onEdit, required this.onDelete});
+  final int index;
+  final ShortcutAction action;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          ReorderableDragStartListener(
+            index: index,
+            child: const Icon(Icons.drag_indicator, size: 14, color: MUPhoneColors.textDisabled),
+          ),
+          const SizedBox(width: 6),
+          Icon(ShortcutAction.iconData(action.icon), size: 14, color: MUPhoneColors.primary),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 60,
+            child: Text(action.label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: MUPhoneColors.textPrimary),
+              overflow: TextOverflow.ellipsis),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(
+              color: action.type == 'app' ? MUPhoneColors.primary.withValues(alpha: 0.1) : MUPhoneColors.statusLockedOther.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(action.type == 'app' ? 'APP' : 'ADB',
+              style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600,
+                color: action.type == 'app' ? MUPhoneColors.primary : MUPhoneColors.statusLockedOther)),
+          ),
+          const SizedBox(width: 6),
+          Expanded(child: Text(action.command,
+            style: const TextStyle(fontSize: 9, color: MUPhoneColors.textDisabled),
+            overflow: TextOverflow.ellipsis)),
+          SizedBox(width: 22, height: 18, child: IconButton(
+            padding: EdgeInsets.zero, iconSize: 12,
+            icon: const Icon(Icons.edit_outlined, color: MUPhoneColors.textDisabled),
+            onPressed: onEdit)),
+          SizedBox(width: 22, height: 18, child: IconButton(
+            padding: EdgeInsets.zero, iconSize: 12,
+            icon: const Icon(Icons.delete_outline, color: MUPhoneColors.statusFailed),
+            onPressed: onDelete)),
+        ],
       ),
     );
   }

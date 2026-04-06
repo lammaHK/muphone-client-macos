@@ -72,6 +72,10 @@ class _MainScreenState extends State<MainScreen> {
       final raw = data['deviceAliases'] as Map<String, dynamic>? ?? {};
       state.setDeviceAliasMap(raw.map((k, v) => MapEntry(k, v.toString())));
     }
+    if (data.containsKey('shortcuts')) {
+      final raw = data['shortcuts'] as List<dynamic>? ?? [];
+      state.setShortcuts(raw.map((e) => ShortcutAction.fromJson(Map<String, dynamic>.from(e as Map))).toList());
+    }
   }
 
   void _debouncedSave(AppState state) {
@@ -85,6 +89,7 @@ class _MainScreenState extends State<MainScreen> {
         'hiddenSerials': state.hiddenSerials.toList(),
         'deviceQuality': state.deviceQuality,
         'deviceAliases': state.deviceAliases,
+        'shortcuts': state.shortcuts.map((s) => s.toJson()).toList(),
       });
     });
   }

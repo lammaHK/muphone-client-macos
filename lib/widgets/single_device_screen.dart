@@ -4,9 +4,13 @@ import 'dart:io';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import '../models/app_state.dart';
+import '../services/persistence.dart';
 import '../services/platform_bridge.dart';
 import '../theme/muphone_theme.dart';
 import 'nav_bar.dart';
+import 'shortcut_bar.dart';
 
 class SingleDeviceScreen extends StatefulWidget {
   const SingleDeviceScreen({super.key, required this.deviceId, required this.host});
@@ -21,10 +25,12 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
   StreamSubscription<Map<String, dynamic>>? _eventSub;
   int? _textureId;
   int _physW = 1080, _physH = 2400;
+  int _streamW = 405, _streamH = 720;
   String _serial = '';
   String _status = '初始化...';
   bool _connected = false;
   bool _isQualitySwitching = false;
+  bool _hasFrames = false;
   Timer? _scrollTimer;
   bool _scrollActive = false;
   double _scrollAccumY = 0;
@@ -78,6 +84,16 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
 
   Future<void> _init() async {
     final bridge = PlatformBridge.instance;
+
+    // Load persisted shortcuts into AppState
+    Persistence.instance.initialize();
+    final data = await Persistence.instance.load();
+    if (data.containsKey('shortcuts') && mounted) {
+      final raw = data['shortcuts'] as List<dynamic>? ?? [];
+      context.read<AppState>().setShortcuts(
+        raw.map((e) => ShortcutAction.fromJson(Map<String, dynamic>.from(e as Map))).toList(),
+      );
+    }
 
     setState(() => _status = '初始化 D3D11...');
     await bridge.init();
@@ -164,6 +180,8 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
 
       final w = d['width'] as int? ?? 405;
       final h = d['height'] as int? ?? 720;
+      _streamW = w;
+      _streamH = h;
       _physW = d['physical_width'] as int? ?? (w * 10 ~/ 3);
       _physH = d['physical_height'] as int? ?? (h * 10 ~/ 3);
 
@@ -262,12 +280,24 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
     }
   }
 
+  DeviceState get _deviceState => DeviceState(
+    deviceId: widget.deviceId,
+    serial: _serial,
+    phase: _connected ? DevicePhase.online : DevicePhase.offline,
+    width: _streamW,
+    height: _streamH,
+    physicalWidth: _physW,
+    physicalHeight: _physH,
+    hasFrames: _hasFrames,
+  );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: MUPhoneColors.background,
       body: Column(
         children: [
+          ShortcutBar(deviceId: widget.deviceId, device: _deviceState),
           Expanded(
             child: Stack(
               children: [
@@ -309,20 +339,6 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
                       ),
                     ),
                   ),
-              // Alias bar — top, right-aligned
-              Positioned(
-                left: 0, right: 0, top: 0,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  color: Colors.black54,
-                  child: Text(
-                    _serial.isNotEmpty ? _serial : 'Device ${widget.deviceId}',
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(fontSize: 10, color: MUPhoneColors.textSecondary),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
               ],
             ),
           ),

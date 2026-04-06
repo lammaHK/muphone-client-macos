@@ -6,6 +6,7 @@ import '../models/app_state.dart';
 import '../services/platform_bridge.dart';
 import '../theme/muphone_theme.dart';
 import 'nav_bar.dart';
+import 'shortcut_bar.dart';
 
 class DeviceCard extends StatefulWidget {
   const DeviceCard({
@@ -112,6 +113,7 @@ class _DeviceCardState extends State<DeviceCard> {
         children: [
           Column(
             children: [
+              ShortcutBar(deviceId: widget.device.deviceId, device: widget.device),
               Expanded(child: _buildVideoSurface()),
               NavBar(deviceId: widget.device.deviceId, serial: widget.device.serial),
             ],
@@ -187,18 +189,6 @@ class _DeviceCardState extends State<DeviceCard> {
                   }
                 },
                 child: Texture(textureId: widget.device.textureId!),
-              ),
-              // Device name overlay — top, right-aligned
-              Positioned(
-                left: 0, right: 0, top: 0,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  color: Colors.black54,
-                  child: Text(widget.device.displayName,
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(fontSize: 9, color: MUPhoneColors.textSecondary),
-                    overflow: TextOverflow.ellipsis),
-                ),
               ),
               // Loading overlay (covers texture until first clean frame arrives)
               if (!widget.device.hasFrames)

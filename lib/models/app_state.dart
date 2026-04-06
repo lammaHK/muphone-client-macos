@@ -1,10 +1,48 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import '../services/platform_bridge.dart';
 
 enum ServerConnectionState { disconnected, connecting, connected, reconnecting }
 
 enum DevicePhase { offline, starting, online, locked, failed }
+
+class ShortcutAction {
+  final String label;
+  final String icon;
+  final String type; // 'app' or 'adb'
+  final String command;
+
+  const ShortcutAction({required this.label, this.icon = 'apps', this.type = 'app', required this.command});
+
+  Map<String, dynamic> toJson() => {'label': label, 'icon': icon, 'type': type, 'command': command};
+
+  factory ShortcutAction.fromJson(Map<String, dynamic> j) => ShortcutAction(
+    label: j['label'] as String? ?? '',
+    icon: j['icon'] as String? ?? 'apps',
+    type: j['type'] as String? ?? 'app',
+    command: j['command'] as String? ?? '',
+  );
+
+  static const List<ShortcutAction> defaults = [
+    ShortcutAction(label: 'Chrome', icon: 'language', type: 'app', command: 'com.android.chrome'),
+    ShortcutAction(label: 'WhatsApp', icon: 'chat', type: 'app', command: 'com.whatsapp'),
+    ShortcutAction(label: 'Camera', icon: 'camera_alt', type: 'app', command: 'com.sec.android.app.camera'),
+    ShortcutAction(label: 'Settings', icon: 'settings', type: 'app', command: 'com.android.settings'),
+  ];
+
+  static IconData iconData(String name) {
+    const map = {
+      'language': Icons.language, 'chat': Icons.chat, 'camera_alt': Icons.camera_alt,
+      'settings': Icons.settings, 'apps': Icons.apps, 'phone': Icons.phone,
+      'message': Icons.message, 'map': Icons.map, 'shopping_cart': Icons.shopping_cart,
+      'music_note': Icons.music_note, 'video_call': Icons.video_call, 'terminal': Icons.terminal,
+      'play_arrow': Icons.play_arrow, 'folder': Icons.folder, 'email': Icons.email,
+      'search': Icons.search, 'home': Icons.home, 'star': Icons.star,
+    };
+    return map[name] ?? Icons.apps;
+  }
+}
 
 class GridConfig {
   final int columns;
@@ -114,6 +152,7 @@ class AppState extends ChangeNotifier {
   Set<String> _hiddenSerials = {};
   Map<String, String> _deviceQuality = {};  // serial → 'hd' or 'fhd'
   Map<String, String> _deviceAliases = {};  // serial → alias
+  List<ShortcutAction> _shortcuts = List.of(ShortcutAction.defaults);
 
   ServerConnectionState get connection => _connection;
   List<DeviceState> get devices => List.unmodifiable(_devices);
@@ -131,6 +170,12 @@ class AppState extends ChangeNotifier {
 
   String getDeviceQuality(String serial) => _deviceQuality[serial] ?? 'hd';
   Map<String, String> get deviceAliases => Map.unmodifiable(_deviceAliases);
+  List<ShortcutAction> get shortcuts => List.unmodifiable(_shortcuts);
+
+  void setShortcuts(List<ShortcutAction> list) {
+    _shortcuts = List.of(list);
+    notifyListeners();
+  }
 
   void setDeviceQuality(String serial, String quality) {
     _deviceQuality[serial] = quality;
