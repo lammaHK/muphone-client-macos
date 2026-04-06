@@ -329,11 +329,14 @@ class _ServerSectionState extends State<_ServerSection> {
     if (conn == ServerConnectionState.reconnecting ||
         conn == ServerConnectionState.connecting ||
         conn == ServerConnectionState.connected) {
-      try { await PlatformBridge.instance.disconnect(); } catch (_) {}
-      // Update host from text field even on disconnect
       final host = _ipController.text.trim();
       if (host.isNotEmpty) widget.state.setServerHost(host);
+      // Set disconnected first (triggers device list clear + UI refresh in-place)
       widget.state.setConnection(ServerConnectionState.disconnected);
+      // Then disconnect in background (non-blocking)
+      Future(() async {
+        try { await PlatformBridge.instance.disconnect(); } catch (_) {}
+      });
       return;
     }
 

@@ -32,6 +32,7 @@ class _MainScreenState extends State<MainScreen> {
   final Set<int> _fhdProfileSent = {};
 
   final List<_PendingSub> _subQueue = [];
+  final Set<int> _subscribingNow = {};
   int _activeSubCount = 0;
   static const int _maxConcurrentSubs = 1;
 
@@ -232,6 +233,8 @@ class _MainScreenState extends State<MainScreen> {
         state.setConnection(newConn);
         if (newConn == ServerConnectionState.connected) {
           _fhdProfileSent.clear();
+          _subQueue.clear();
+          _subscribingNow.clear();
         }
         _syncWindowTitle(state);
 
@@ -407,49 +410,67 @@ class _MainScreenState extends State<MainScreen> {
       }
     }
 
-    // Server persists profiles — no need to send on connect.
-    // Quality changes are sent only when user explicitly changes in settings UI.
+    // Sync client quality preferences with server — only send mismatches
+    for (final dev in state.devices) {
+      if (_fhdProfileSent.contains(dev.deviceId)) continue;
+      _fhdProfileSent.add(dev.deviceId);
+      final clientQ = state.getDeviceQuality(dev.serial);
+      if (clientQ.isEmpty || clientQ == 'hd') continue;
+      // Check if server is already at the right profile by comparing dimensions
+      // FHD devices have width > 400 (e.g. 488x1080); HD = 328x720
+      final isServerFhd = dev.width > 400;
+      if (clientQ == 'fhd' && !isServerFhd) {
+        debugPrint('[quality-sync] dev=${dev.deviceId} client=fhd server=hd — sending fhd');
+        bridge.setFpsProfile(dev.deviceId, 'fhd');
+      }
+    }
   }
 
   final Map<int, int> _subscribeGen = {};
 
   void _enqueueSubscribe(PlatformBridge bridge, AppState state, int id, int w, int h) {
+    if (_subscribingNow.contains(id)) return;
     if (_subQueue.any((s) => s.deviceId == id)) return;
     _subQueue.add(_PendingSub(deviceId: id, w: w, h: h));
-    _processSubQueue(bridge, state);
+    _drainSubQueue(bridge, state);
   }
 
-  void _processSubQueue(PlatformBridge bridge, AppState state) {
-    while (_activeSubCount < _maxConcurrentSubs && _subQueue.isNotEmpty) {
-      final item = _subQueue.removeAt(0);
-      _activeSubCount++;
-      _subscribeAndSetTexture(bridge, state, item.deviceId, item.w, item.h);
-    }
+  void _drainSubQueue(PlatformBridge bridge, AppState state) {
+    if (_subscribingNow.length >= _maxConcurrentSubs) return;
+    if (_subQueue.isEmpty) return;
+    final item = _subQueue.removeAt(0);
+    _subscribingNow.add(item.deviceId);
+    _doSubscribe(bridge, state, item.deviceId, item.w, item.h);
   }
 
   void _onDeviceFrameReady(PlatformBridge bridge, AppState state, int deviceId) {
-    _activeSubCount = (_activeSubCount - 1).clamp(0, 99);
-    _processSubQueue(bridge, state);
+    _subscribingNow.remove(deviceId);
+    _drainSubQueue(bridge, state);
   }
 
-  Future<void> _subscribeAndSetTexture(PlatformBridge bridge, AppState state, int id, int w, int h) async {
+  void _releaseSubSlot(int id, PlatformBridge bridge, AppState state) {
+    _subscribingNow.remove(id);
+    _drainSubQueue(bridge, state);
+  }
+
+  Future<void> _doSubscribe(PlatformBridge bridge, AppState state, int id, int w, int h) async {
     final gen = (_subscribeGen[id] ?? 0) + 1;
     _subscribeGen[id] = gen;
 
     final subW = w > 0 ? w : 405;
     final subH = h > 0 ? h : 720;
+    debugPrint('[sub-queue] subscribing dev=$id (queue=${_subQueue.length} active=${_subscribingNow.length})');
     final textureId = await bridge.subscribeDevice(id, width: subW, height: subH);
     if (textureId != null) {
       state.updateDevice(id, (d) => d.copyWith(textureId: textureId));
     }
 
-    // Timeout: if no frames after 4s, release the slot and move on
-    Future.delayed(const Duration(seconds: 4), () {
+    // Long timeout safety net: 30s — should never hit with working IDR gate
+    Future.delayed(const Duration(seconds: 30), () {
       if (_subscribeGen[id] != gen) return;
-      final dev = state.getDevice(id);
-      if (dev != null && !dev.hasFrames) {
-        _activeSubCount = (_activeSubCount - 1).clamp(0, 99);
-        _processSubQueue(bridge, state);
+      if (_subscribingNow.contains(id)) {
+        debugPrint('[sub-queue] dev=$id 30s timeout — releasing slot');
+        _releaseSubSlot(id, bridge, state);
       }
     });
   }
