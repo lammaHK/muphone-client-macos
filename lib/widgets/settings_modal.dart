@@ -668,6 +668,7 @@ class _ShortcutSectionState extends State<_ShortcutSection> {
             side: const BorderSide(color: MUPhoneColors.border)),
           title: Text(index != null ? '編輯快捷鍵' : '新增快捷鍵',
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: MUPhoneColors.textPrimary)),
+          contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
           content: SizedBox(
             width: 320,
             child: Column(
@@ -741,7 +742,7 @@ class _ShortcutSectionState extends State<_ShortcutSection> {
 
   Widget _dialogInput(TextEditingController ctrl, String hint) {
     return SizedBox(
-      height: 32,
+      height: 38,
       child: TextField(
         controller: ctrl,
         style: const TextStyle(fontSize: 12, color: MUPhoneColors.textPrimary),
@@ -749,7 +750,7 @@ class _ShortcutSectionState extends State<_ShortcutSection> {
           hintText: hint,
           hintStyle: TextStyle(color: MUPhoneColors.textDisabled.withValues(alpha: 0.4)),
           filled: true, fillColor: MUPhoneColors.background,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(5),
             borderSide: const BorderSide(color: MUPhoneColors.border, width: 0.5)),
           enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(5),

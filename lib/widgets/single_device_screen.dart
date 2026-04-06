@@ -127,6 +127,11 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
       });
     } else if (type == 'device_list') {
       _handleDeviceList(event);
+    } else if (type == 'frame_ready') {
+      final frid = event['device_id'] as int?;
+      if (frid == widget.deviceId && !_hasFrames) {
+        setState(() => _hasFrames = true);
+      }
     } else if (type == 'fps_update') {
       _handleFpsUpdate(event);
     }
@@ -196,7 +201,15 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
             _status = '';
           });
         } else if (mounted) {
-          setState(() => _status = '$_serial — $phase (textureId=$tid)');
+          setState(() => _status = '$_serial — 重試中...');
+          // Retry once after delay
+          Future.delayed(const Duration(seconds: 2), () async {
+            if (!mounted || _textureId != null) return;
+            final tid2 = await PlatformBridge.instance.subscribeDevice(id, width: w, height: h);
+            if (tid2 != null && mounted) {
+              setState(() { _textureId = tid2; _status = ''; });
+            }
+          });
         }
       }
       break;

@@ -119,8 +119,8 @@ class _InfoBtn extends StatelessWidget {
     final header = TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: MUPhoneColors.textPrimary, height: 1.5);
 
     return TextSpan(children: [
-      TextSpan(text: '● ', style: TextStyle(fontSize: 8, color: phaseColor, height: 1.5)),
-      TextSpan(text: '${d.displayName}\n', style: header),
+      TextSpan(text: '● ${d.displayName}\n', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: phaseColor, height: 1.6)),
+      const TextSpan(text: '─────────────\n', style: TextStyle(fontSize: 7, color: MUPhoneColors.border, height: 1.2)),
       const TextSpan(text: '序號  ', style: lbl), TextSpan(text: '${d.serial}\n', style: val),
       if (d.alias.isNotEmpty) ...[
         const TextSpan(text: '別名  ', style: lbl), TextSpan(text: '${d.alias}\n', style: val),
