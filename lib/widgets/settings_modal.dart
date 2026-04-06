@@ -236,8 +236,10 @@ class _ServerSectionState extends State<_ServerSection> {
         conn == ServerConnectionState.connecting ||
         conn == ServerConnectionState.connected) {
       try { await PlatformBridge.instance.disconnect(); } catch (_) {}
+      // Update host from text field even on disconnect
+      final host = _ipController.text.trim();
+      if (host.isNotEmpty) widget.state.setServerHost(host);
       widget.state.setConnection(ServerConnectionState.disconnected);
-      if (conn == ServerConnectionState.connected) return;
       return;
     }
 

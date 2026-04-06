@@ -242,6 +242,7 @@ class _MainScreenState extends State<MainScreen> {
         final id = event['device_id'] as int?;
         final profile = event['profile'] as String?;
         final restarting = event['restarting'] as bool? ?? false;
+        debugPrint('[fps_update] dev=$id profile=$profile restarting=$restarting');
         if (id != null && profile != null) {
           final fpsVal = (profile == 'full' || profile == 'fhd') ? 60 : 24;
           state.updateDevice(id, (d) => d.copyWith(fps: fpsVal, isQualitySwitching: restarting, hasFrames: restarting ? false : d.hasFrames));
@@ -284,9 +285,11 @@ class _MainScreenState extends State<MainScreen> {
       final height = d['height'] as int? ?? 720;
       final physW = d['physical_width'] as int? ?? 0;
       final physH = d['physical_height'] as int? ?? 0;
-      // Derive physical size: if not reported, estimate from stream via scale
+      final profile = d['profile'] as String? ?? '';
       final physicalW = physW > 0 ? physW : (width > 0 ? (width * 10 ~/ 3) : 1080);
       final physicalH = physH > 0 ? physH : (height > 0 ? (height * 10 ~/ 3) : 2400);
+      // Derive FPS from server-reported profile
+      final fpsFromProfile = (profile == 'fhd' || profile == 'full') ? 60 : (profile == 'hd') ? 30 : (profile == 'reduced') ? 24 : 0;
 
       final existing = state.getDevice(id);
       if (existing == null) {
@@ -295,7 +298,7 @@ class _MainScreenState extends State<MainScreen> {
           deviceId: id, serial: serial, phase: phase,
           width: width, height: height,
           physicalWidth: physicalW, physicalHeight: physicalH,
-          alias: savedAlias,
+          alias: savedAlias, fps: fpsFromProfile,
         ));
         if ((phase == DevicePhase.online || phase == DevicePhase.locked) &&
             !state.isDeviceHidden(serial)) {
@@ -307,6 +310,7 @@ class _MainScreenState extends State<MainScreen> {
           phase: phase, serial: serial,
           width: width, height: height,
           physicalWidth: physicalW, physicalHeight: physicalH,
+          fps: fpsFromProfile > 0 ? fpsFromProfile : d.fps,
         ));
         if (nowOnline && existing.textureId == null && !state.isDeviceHidden(serial)) {
           _subscribeAndSetTexture(bridge, state, id, width, height);
@@ -344,22 +348,23 @@ class _MainScreenState extends State<MainScreen> {
       state.updateDevice(id, (d) => d.copyWith(textureId: textureId));
     }
 
-    // One-shot retry: if no frames after 15s, resubscribe once
-    Future.delayed(const Duration(seconds: 15), () {
-      if (_subscribeGen[id] != gen) return;
-      final dev = state.getDevice(id);
-      if (dev != null && !dev.hasFrames && !state.isDeviceHidden(dev.serial)) {
-        debugPrint('[subscribe] dev=$id still no frames after 15s — retry once');
-        bridge.unsubscribeDevice(id);
-        state.updateDevice(id, (d) => d.copyWith(textureId: null));
-        // Non-recursive: just resubscribe, don't schedule another retry
-        bridge.subscribeDevice(id, width: subW, height: subH).then((tid) {
-          if (tid != null && _subscribeGen[id] == gen) {
-            state.updateDevice(id, (d) => d.copyWith(textureId: tid));
-          }
-        });
-      }
-    });
+    // Retry at 5s and 12s if no frames arrived
+    for (final delay in [5, 12]) {
+      Future.delayed(Duration(seconds: delay), () {
+        if (_subscribeGen[id] != gen) return;
+        final dev = state.getDevice(id);
+        if (dev != null && !dev.hasFrames && !state.isDeviceHidden(dev.serial)) {
+          debugPrint('[subscribe] dev=$id no frames after ${delay}s — retry');
+          bridge.unsubscribeDevice(id);
+          state.updateDevice(id, (d) => d.copyWith(textureId: null, hasFrames: false));
+          bridge.subscribeDevice(id, width: subW, height: subH).then((tid) {
+            if (tid != null && _subscribeGen[id] == gen) {
+              state.updateDevice(id, (d) => d.copyWith(textureId: tid));
+            }
+          });
+        }
+      });
+    }
   }
 
   void _resubscribeAfterQualitySwitch(PlatformBridge bridge, AppState state, int id) {
