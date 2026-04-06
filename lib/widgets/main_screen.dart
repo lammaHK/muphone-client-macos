@@ -386,13 +386,21 @@ class _MainScreenState extends State<MainScreen> {
       } else {
         final nowOnline = phase == DevicePhase.online || phase == DevicePhase.locked;
         final dimChanged = existing.width != width || existing.height != height;
+        final wasOnline = existing.phase == DevicePhase.online || existing.phase == DevicePhase.locked;
+        final goingStarting = phase == DevicePhase.starting && wasOnline;
         state.updateDevice(id, (d) => d.copyWith(
           phase: phase, serial: serial,
           width: width, height: height,
           physicalWidth: physicalW, physicalHeight: physicalH,
           fps: fpsFromProfile > 0 ? fpsFromProfile : d.fps,
           isQualitySwitching: dimChanged ? false : d.isQualitySwitching,
+          hasFrames: goingStarting ? false : null,
         ));
+        if (goingStarting && existing.textureId != null) {
+          bridge.unsubscribeDevice(id);
+          state.updateDevice(id, (d) => d.copyWith(textureId: null));
+          _subscribingNow.remove(id);
+        }
         if (nowOnline && !state.isDeviceHidden(serial)) {
           final needsFhd2 = state.getDeviceQuality(serial) == 'fhd' && width <= 400;
           if (existing.textureId == null && !needsFhd2) {

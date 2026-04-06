@@ -118,6 +118,8 @@ class _DeviceCardState extends State<DeviceCard> {
               NavBar(deviceId: widget.device.deviceId, serial: widget.device.serial),
             ],
           ),
+          if (widget.device.phase == DevicePhase.starting && !widget.device.hasFrames)
+            Positioned.fill(child: _buildRestartingOverlay()),
           if (widget.device.isDetached)
             Positioned.fill(child: _buildDetachedOverlay()),
           if (widget.device.isQualitySwitching)
@@ -261,6 +263,23 @@ class _DeviceCardState extends State<DeviceCard> {
             strokeWidth: 2, color: MUPhoneColors.primary)),
           SizedBox(height: 8),
           Text('切換畫質中...', style: TextStyle(fontSize: 10, color: MUPhoneColors.textSecondary)),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildRestartingOverlay() {
+    return Container(
+      color: MUPhoneColors.background.withValues(alpha: 0.85),
+      child: Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          SizedBox(width: 22, height: 22, child: Stack(alignment: Alignment.center, children: [
+            SizedBox(width: 20, height: 20, child: CircularProgressIndicator(
+              strokeWidth: 1.5, color: MUPhoneColors.statusLockedOther.withValues(alpha: 0.6))),
+            Icon(Icons.restart_alt, size: 12, color: MUPhoneColors.statusLockedOther),
+          ])),
+          const SizedBox(height: 6),
+          const Text('裝置啟動中...', style: TextStyle(fontSize: 10, color: MUPhoneColors.textSecondary)),
         ]),
       ),
     );
