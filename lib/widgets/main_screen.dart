@@ -219,12 +219,17 @@ class _MainScreenState extends State<MainScreen> {
     switch (type) {
       case 'server_connection_state':
         final s = event['state'] as String? ?? '';
-        state.setConnection(switch (s) {
+        final newConn = switch (s) {
           'connected'    => ServerConnectionState.connected,
           'connecting'   => ServerConnectionState.connecting,
           'reconnecting' => ServerConnectionState.reconnecting,
           _              => ServerConnectionState.disconnected,
-        });
+        };
+        state.setConnection(newConn);
+        if (newConn == ServerConnectionState.connected) {
+          _fhdProfileSent.clear();
+        }
+        _syncWindowTitle(state);
 
       case 'device_list':
         if (state.connection != ServerConnectionState.connected) return;
@@ -398,13 +403,22 @@ class _MainScreenState extends State<MainScreen> {
       }
     }
 
-    // Send saved quality profiles on first device_list (one-time per device)
+    // Send saved quality profiles on first device_list — stagger to avoid overwhelming server
+    int fhdDelay = 0;
     for (final dev in state.devices) {
       if (_fhdProfileSent.contains(dev.deviceId)) continue;
       _fhdProfileSent.add(dev.deviceId);
       final q = state.getDeviceQuality(dev.serial);
       if (q == 'fhd') {
-        bridge.setFpsProfile(dev.deviceId, 'fhd');
+        final devId = dev.deviceId;
+        if (fhdDelay == 0) {
+          bridge.setFpsProfile(devId, 'fhd');
+        } else {
+          Future.delayed(Duration(milliseconds: fhdDelay), () {
+            bridge.setFpsProfile(devId, 'fhd');
+          });
+        }
+        fhdDelay += 3000;
       }
     }
   }
