@@ -306,14 +306,24 @@ class _MainScreenState extends State<MainScreen> {
         }
       } else {
         final nowOnline = phase == DevicePhase.online || phase == DevicePhase.locked;
+        final dimChanged = existing.width != width || existing.height != height;
         state.updateDevice(id, (d) => d.copyWith(
           phase: phase, serial: serial,
           width: width, height: height,
           physicalWidth: physicalW, physicalHeight: physicalH,
           fps: fpsFromProfile > 0 ? fpsFromProfile : d.fps,
+          isQualitySwitching: dimChanged ? false : d.isQualitySwitching,
         ));
-        if (nowOnline && existing.textureId == null && !state.isDeviceHidden(serial)) {
-          _subscribeAndSetTexture(bridge, state, id, width, height);
+        if (nowOnline && !state.isDeviceHidden(serial)) {
+          if (existing.textureId == null) {
+            _subscribeAndSetTexture(bridge, state, id, width, height);
+          } else if (dimChanged) {
+            // Resolution changed (quality switch completed) — resubscribe for new dimensions
+            debugPrint('[device_list] dev=$id dim changed ${existing.width}x${existing.height} → ${width}x$height — resubscribe');
+            bridge.unsubscribeDevice(id);
+            state.updateDevice(id, (d) => d.copyWith(textureId: null, hasFrames: false));
+            _subscribeAndSetTexture(bridge, state, id, width, height);
+          }
         }
       }
     }

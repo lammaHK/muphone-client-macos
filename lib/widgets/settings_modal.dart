@@ -671,6 +671,7 @@ class _ShortcutSectionState extends State<_ShortcutSection> {
           title: Text(index != null ? '編輯快捷鍵' : '新增快捷鍵',
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: MUPhoneColors.textPrimary)),
           contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+          actionsPadding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
           content: SizedBox(
             width: 320,
             child: Column(
