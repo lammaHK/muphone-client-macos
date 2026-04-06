@@ -31,6 +31,8 @@ class _DeviceCardState extends State<DeviceCard> {
   bool _scrollActive = false;
   double _scrollAccumY = 0;
   double _scrollCx = 0, _scrollCy = 0;
+  bool _videoReady = false;
+  int? _lastTextureId;
 
   // Map widget coordinate to device physical coordinate
   int _toDevX(double wx, double widgetW) {
@@ -126,7 +128,21 @@ class _DeviceCardState extends State<DeviceCard> {
   }
 
   Widget _buildVideoSurface() {
-    if (widget.device.textureId != null && widget.device.textureId! >= 0) {
+    // Detect new texture → start warmup delay
+    final tid = widget.device.textureId;
+    if (tid != _lastTextureId) {
+      _lastTextureId = tid;
+      _videoReady = false;
+      if (tid != null && tid >= 0) {
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted && widget.device.textureId == tid) {
+            setState(() => _videoReady = true);
+          }
+        });
+      }
+    }
+
+    if (tid != null && tid >= 0 && _videoReady) {
       return LayoutBuilder(
         builder: (context, constraints) {
           final ww = constraints.maxWidth;
@@ -207,20 +223,21 @@ class _DeviceCardState extends State<DeviceCard> {
 
     final isOnline = widget.device.phase == DevicePhase.online ||
                      widget.device.phase == DevicePhase.locked;
+    final isWarming = tid != null && tid >= 0 && !_videoReady;
     return Container(
       color: Colors.transparent,
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (isOnline)
+            if (isOnline || isWarming)
               const SizedBox(width: 20, height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2, color: MUPhoneColors.primary))
             else
               Icon(Icons.phone_android, size: 28,
                 color: MUPhoneColors.textDisabled.withValues(alpha: 0.5)),
             const SizedBox(height: 6),
-            Text(isOnline ? '建構畫面中...' : widget.device.displayName,
+            Text((isOnline || isWarming) ? '建構畫面中...' : widget.device.displayName,
               style: const TextStyle(fontSize: 10, color: MUPhoneColors.textSecondary),
               overflow: TextOverflow.ellipsis),
           ],
