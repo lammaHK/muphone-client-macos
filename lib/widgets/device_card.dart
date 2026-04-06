@@ -134,7 +134,7 @@ class _DeviceCardState extends State<DeviceCard> {
       _lastTextureId = tid;
       _videoReady = false;
       if (tid != null && tid >= 0) {
-        Future.delayed(const Duration(seconds: 3), () {
+        Future.delayed(const Duration(seconds: 5), () {
           if (mounted && widget.device.textureId == tid) {
             setState(() => _videoReady = true);
           }
