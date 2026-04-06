@@ -39,6 +39,7 @@ class DeviceState {
   bool isSelected;
   bool isDetached;
   bool isQualitySwitching;
+  bool hasFrames;
   int? textureId;
 
   DeviceState({
@@ -55,6 +56,7 @@ class DeviceState {
     this.isSelected = false,
     this.isDetached = false,
     this.isQualitySwitching = false,
+    this.hasFrames = false,
     this.textureId,
   });
 
@@ -77,6 +79,7 @@ class DeviceState {
     bool? isSelected,
     bool? isDetached,
     bool? isQualitySwitching,
+    bool? hasFrames,
     int? textureId,
   }) {
     return DeviceState(
@@ -93,6 +96,7 @@ class DeviceState {
       isSelected: isSelected ?? this.isSelected,
       isDetached: isDetached ?? this.isDetached,
       isQualitySwitching: isQualitySwitching ?? this.isQualitySwitching,
+      hasFrames: hasFrames ?? this.hasFrames,
       textureId: textureId ?? this.textureId,
     );
   }

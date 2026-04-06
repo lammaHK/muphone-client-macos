@@ -31,8 +31,6 @@ class _DeviceCardState extends State<DeviceCard> {
   bool _scrollActive = false;
   double _scrollAccumY = 0;
   double _scrollCx = 0, _scrollCy = 0;
-  bool _showLoading = true;
-  int? _loadingTextureId;
 
   // Map widget coordinate to device physical coordinate
   int _toDevX(double wx, double widgetW) {
@@ -129,20 +127,6 @@ class _DeviceCardState extends State<DeviceCard> {
 
   Widget _buildVideoSurface() {
     final tid = widget.device.textureId;
-
-    // When texture ID changes, show loading overlay for 1.5s (until live IDR arrives)
-    if (tid != _loadingTextureId) {
-      _loadingTextureId = tid;
-      if (tid != null && tid >= 0) {
-        _showLoading = true;
-        Future.delayed(const Duration(milliseconds: 1500), () {
-          if (mounted && widget.device.textureId == tid) {
-            setState(() => _showLoading = false);
-          }
-        });
-      }
-    }
-
     if (tid != null && tid >= 0) {
       return LayoutBuilder(
         builder: (context, constraints) {
@@ -216,8 +200,8 @@ class _DeviceCardState extends State<DeviceCard> {
                     overflow: TextOverflow.ellipsis),
                 ),
               ),
-              // Loading overlay (covers texture until live IDR frames arrive)
-              if (_showLoading)
+              // Loading overlay (covers texture until first clean frame arrives)
+              if (!widget.device.hasFrames)
                 Positioned.fill(
                   child: Container(
                     color: MUPhoneColors.card,

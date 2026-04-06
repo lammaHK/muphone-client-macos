@@ -227,13 +227,19 @@ class _MainScreenState extends State<MainScreen> {
           state.updateDevice(id, (d) => d.copyWith(phase: DevicePhase.failed));
         }
 
+      case 'frame_ready':
+        final frid = event['device_id'] as int?;
+        if (frid != null) {
+          state.updateDevice(frid, (d) => d.copyWith(hasFrames: true));
+        }
+
       case 'fps_update':
         final id = event['device_id'] as int?;
         final profile = event['profile'] as String?;
         final restarting = event['restarting'] as bool? ?? false;
         if (id != null && profile != null) {
           final fpsVal = (profile == 'full' || profile == 'fhd') ? 60 : 24;
-          state.updateDevice(id, (d) => d.copyWith(fps: fpsVal, isQualitySwitching: restarting));
+          state.updateDevice(id, (d) => d.copyWith(fps: fpsVal, isQualitySwitching: restarting, hasFrames: restarting ? false : d.hasFrames));
           if (restarting) {
             _resubscribeAfterQualitySwitch(PlatformBridge.instance, state, id);
           }
