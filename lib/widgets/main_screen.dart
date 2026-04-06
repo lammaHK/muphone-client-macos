@@ -33,7 +33,7 @@ class _MainScreenState extends State<MainScreen> {
 
   final List<_PendingSub> _subQueue = [];
   int _activeSubCount = 0;
-  static const int _maxConcurrentSubs = 4;
+  static const int _maxConcurrentSubs = 1;
 
   @override
   void initState() {
@@ -443,8 +443,8 @@ class _MainScreenState extends State<MainScreen> {
       state.updateDevice(id, (d) => d.copyWith(textureId: textureId));
     }
 
-    // Timeout: if no frames after 6s, release the slot and move on
-    Future.delayed(const Duration(seconds: 6), () {
+    // Timeout: if no frames after 4s, release the slot and move on
+    Future.delayed(const Duration(seconds: 4), () {
       if (_subscribeGen[id] != gen) return;
       final dev = state.getDevice(id);
       if (dev != null && !dev.hasFrames) {

@@ -263,7 +263,8 @@ class AppState extends ChangeNotifier {
     final previous = _connection;
     _connection = state;
 
-    if (state == ServerConnectionState.disconnected && previous != ServerConnectionState.disconnected) {
+    if ((state == ServerConnectionState.disconnected || state == ServerConnectionState.reconnecting) &&
+        previous == ServerConnectionState.connected) {
       _clearAllDevices();
     }
 
