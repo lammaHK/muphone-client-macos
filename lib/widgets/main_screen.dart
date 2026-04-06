@@ -378,7 +378,10 @@ class _MainScreenState extends State<MainScreen> {
         ));
         if ((phase == DevicePhase.online || phase == DevicePhase.locked) &&
             !state.isDeviceHidden(serial)) {
-          _enqueueSubscribe(bridge, state, id, width, height);
+          final needsFhd = state.getDeviceQuality(serial) == 'fhd' && width <= 400;
+          if (!needsFhd) {
+            _enqueueSubscribe(bridge, state, id, width, height);
+          }
         }
       } else {
         final nowOnline = phase == DevicePhase.online || phase == DevicePhase.locked;
@@ -391,7 +394,8 @@ class _MainScreenState extends State<MainScreen> {
           isQualitySwitching: dimChanged ? false : d.isQualitySwitching,
         ));
         if (nowOnline && !state.isDeviceHidden(serial)) {
-          if (existing.textureId == null) {
+          final needsFhd2 = state.getDeviceQuality(serial) == 'fhd' && width <= 400;
+          if (existing.textureId == null && !needsFhd2) {
             _enqueueSubscribe(bridge, state, id, width, height);
           } else if (dimChanged) {
             debugPrint('[device_list] dev=$id dim changed ${existing.width}x${existing.height} → ${width}x$height — resubscribe');
@@ -410,17 +414,15 @@ class _MainScreenState extends State<MainScreen> {
       }
     }
 
-    // Sync client quality preferences with server — only send mismatches
+    // Quality sync: send FHD for mismatched devices, but DON'T subscribe them yet.
+    // They'll be subscribed when the server restarts scrcpy and sends a new device_list
+    // with FHD dimensions (triggering the dimChanged path).
     for (final dev in state.devices) {
       if (_fhdProfileSent.contains(dev.deviceId)) continue;
-      _fhdProfileSent.add(dev.deviceId);
       final clientQ = state.getDeviceQuality(dev.serial);
-      if (clientQ.isEmpty || clientQ == 'hd') continue;
-      // Check if server is already at the right profile by comparing dimensions
-      // FHD devices have width > 400 (e.g. 488x1080); HD = 328x720
-      final isServerFhd = dev.width > 400;
-      if (clientQ == 'fhd' && !isServerFhd) {
-        debugPrint('[quality-sync] dev=${dev.deviceId} client=fhd server=hd — sending fhd');
+      if (clientQ == 'fhd' && dev.width <= 400) {
+        _fhdProfileSent.add(dev.deviceId);
+        debugPrint('[quality-sync] dev=${dev.deviceId} needs fhd upgrade — sending (skip subscribe)');
         bridge.setFpsProfile(dev.deviceId, 'fhd');
       }
     }
