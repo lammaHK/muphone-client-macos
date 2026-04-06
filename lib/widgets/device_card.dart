@@ -31,6 +31,8 @@ class _DeviceCardState extends State<DeviceCard> {
   bool _scrollActive = false;
   double _scrollAccumY = 0;
   double _scrollCx = 0, _scrollCy = 0;
+  bool _showLoading = true;
+  int? _loadingTextureId;
 
   // Map widget coordinate to device physical coordinate
   int _toDevX(double wx, double widgetW) {
@@ -127,6 +129,20 @@ class _DeviceCardState extends State<DeviceCard> {
 
   Widget _buildVideoSurface() {
     final tid = widget.device.textureId;
+
+    // When texture ID changes, show loading overlay for 1.5s (until live IDR arrives)
+    if (tid != _loadingTextureId) {
+      _loadingTextureId = tid;
+      if (tid != null && tid >= 0) {
+        _showLoading = true;
+        Future.delayed(const Duration(milliseconds: 1500), () {
+          if (mounted && widget.device.textureId == tid) {
+            setState(() => _showLoading = false);
+          }
+        });
+      }
+    }
+
     if (tid != null && tid >= 0) {
       return LayoutBuilder(
         builder: (context, constraints) {
@@ -200,6 +216,21 @@ class _DeviceCardState extends State<DeviceCard> {
                     overflow: TextOverflow.ellipsis),
                 ),
               ),
+              // Loading overlay (covers texture until live IDR frames arrive)
+              if (_showLoading)
+                Positioned.fill(
+                  child: Container(
+                    color: MUPhoneColors.card,
+                    child: const Center(
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        SizedBox(width: 20, height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: MUPhoneColors.primary)),
+                        SizedBox(height: 6),
+                        Text('建構畫面中...', style: TextStyle(fontSize: 10, color: MUPhoneColors.textSecondary)),
+                      ]),
+                    ),
+                  ),
+                ),
             ],
           );
         },
