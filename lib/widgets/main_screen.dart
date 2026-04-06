@@ -320,13 +320,31 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
+  final Map<int, int> _subscribeGen = {};
+
   Future<void> _subscribeAndSetTexture(PlatformBridge bridge, AppState state, int id, int w, int h) async {
+    final gen = (_subscribeGen[id] ?? 0) + 1;
+    _subscribeGen[id] = gen;
+
     final subW = w > 0 ? w : 405;
     final subH = h > 0 ? h : 720;
     final textureId = await bridge.subscribeDevice(id, width: subW, height: subH);
     if (textureId != null) {
       state.updateDevice(id, (d) => d.copyWith(textureId: textureId));
     }
+
+    // Auto-resubscribe after 15s if no live frames arrived
+    Future.delayed(const Duration(seconds: 15), () {
+      if (_subscribeGen[id] != gen) return; // superseded
+      final dev = state.getDevice(id);
+      if (dev != null && dev.textureId != null && !state.isDeviceHidden(dev.serial)) {
+        // Check if device is still showing loading (no frames)
+        // Force resubscribe to get a fresh connection
+        bridge.unsubscribeDevice(id);
+        state.updateDevice(id, (d) => d.copyWith(textureId: null));
+        _subscribeAndSetTexture(bridge, state, id, w, h);
+      }
+    });
   }
 
   void _resubscribeAfterQualitySwitch(PlatformBridge bridge, AppState state, int id) {
