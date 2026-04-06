@@ -39,6 +39,11 @@ class ShortcutAction {
       'music_note': Icons.music_note, 'video_call': Icons.video_call, 'terminal': Icons.terminal,
       'play_arrow': Icons.play_arrow, 'folder': Icons.folder, 'email': Icons.email,
       'search': Icons.search, 'home': Icons.home, 'star': Icons.star,
+      'send': Icons.send, 'account_balance_wallet': Icons.account_balance_wallet,
+      'qr_code': Icons.qr_code, 'payments': Icons.payments,
+      'photo': Icons.photo, 'file_download': Icons.file_download,
+      'notifications': Icons.notifications, 'bookmark': Icons.bookmark,
+      'share': Icons.share, 'cloud': Icons.cloud,
     };
     return map[name] ?? Icons.apps;
   }

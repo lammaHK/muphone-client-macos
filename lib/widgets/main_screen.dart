@@ -26,9 +26,12 @@ class _MainScreenState extends State<MainScreen> {
   StreamSubscription<Map<String, dynamic>>? _eventSub;
   String _lastTitle = '';
   Timer? _saveTimer;
+  Timer? _frameWatchdog;
   String _desiredProfile = 'full';
   final Map<int, int> _qualitySwitchGen = {};
   final Set<int> _fhdProfileSent = {};
+  final Map<int, DateTime> _lastFrameTime = {};
+  final Set<int> _resubscribingDevices = {};
 
   @override
   void initState() {
@@ -41,6 +44,7 @@ class _MainScreenState extends State<MainScreen> {
     HardwareKeyboard.instance.removeHandler(_onHardwareKey);
     _eventSub?.cancel();
     _saveTimer?.cancel();
+    _frameWatchdog?.cancel();
     super.dispose();
   }
 
@@ -235,7 +239,9 @@ class _MainScreenState extends State<MainScreen> {
       case 'frame_ready':
         final frid = event['device_id'] as int?;
         if (frid != null) {
+          _lastFrameTime[frid] = DateTime.now();
           state.updateDevice(frid, (d) => d.copyWith(hasFrames: true));
+          _startFrameWatchdog();
         }
 
       case 'fps_update':
@@ -386,6 +392,57 @@ class _MainScreenState extends State<MainScreen> {
         state.updateDevice(id, (d) => d.copyWith(isQualitySwitching: false));
       }
     });
+  }
+
+  void _startFrameWatchdog() {
+    if (_frameWatchdog != null) return;
+    _frameWatchdog = Timer.periodic(const Duration(seconds: 8), (_) => _checkStaleDevices());
+  }
+
+  void _checkStaleDevices() {
+    if (!mounted) return;
+    final state = context.read<AppState>();
+    final bridge = PlatformBridge.instance;
+    final now = DateTime.now();
+
+    for (final dev in state.devices) {
+      if (state.isDeviceHidden(dev.serial)) continue;
+      if (dev.phase != DevicePhase.online && dev.phase != DevicePhase.locked) continue;
+      if (dev.textureId == null) continue;
+      if (dev.isQualitySwitching) continue;
+      if (_resubscribingDevices.contains(dev.deviceId)) continue;
+
+      final lastFrame = _lastFrameTime[dev.deviceId];
+      // Case 1: had frames before but stale for 15s
+      final stale = lastFrame != null && dev.hasFrames && now.difference(lastFrame).inMilliseconds > 15000;
+      // Case 2: subscribed but never got frame_ready within 20s
+      final neverReady = lastFrame == null && !dev.hasFrames;
+
+      if (!stale && !neverReady) continue;
+      if (neverReady) {
+        _lastFrameTime[dev.deviceId] = now;
+        continue;
+      }
+
+      debugPrint('[Watchdog] dev=${dev.deviceId} stale — resubscribing');
+      _resubscribingDevices.add(dev.deviceId);
+      state.updateDevice(dev.deviceId, (d) => d.copyWith(hasFrames: false));
+      bridge.unsubscribeDevice(dev.deviceId);
+      state.updateDevice(dev.deviceId, (d) => d.copyWith(textureId: null));
+
+      Future.delayed(const Duration(milliseconds: 500), () async {
+        if (!mounted) return;
+        final d2 = state.getDevice(dev.deviceId);
+        if (d2 != null && !state.isDeviceHidden(d2.serial)) {
+          final tid = await bridge.subscribeDevice(dev.deviceId, width: d2.width > 0 ? d2.width : 405, height: d2.height > 0 ? d2.height : 720);
+          if (tid != null && mounted) {
+            state.updateDevice(dev.deviceId, (d) => d.copyWith(textureId: tid));
+            _lastFrameTime[dev.deviceId] = DateTime.now();
+          }
+        }
+        _resubscribingDevices.remove(dev.deviceId);
+      });
+    }
   }
 
   static DevicePhase _parsePhase(String s) => switch (s.toLowerCase()) {

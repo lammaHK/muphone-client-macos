@@ -129,69 +129,71 @@ class _InfoBtnState extends State<_InfoBtn> {
     final state = context.read<AppState>();
     final quality = state.getDeviceQuality(d.serial);
 
-    return CompositedTransformFollower(
-      link: _link,
-      targetAnchor: Alignment.bottomRight,
-      followerAnchor: Alignment.topRight,
-      offset: const Offset(0, 4),
-      child: MouseRegion(
-        onEnter: (_) => _hovering = true,
-        onExit: (_) { _hovering = false; Future.delayed(const Duration(milliseconds: 120), () {
-          if (!_hovering) _hide();
-        }); },
-        child: Material(
-          elevation: 8,
-          shadowColor: Colors.black54,
-          borderRadius: BorderRadius.circular(8),
-          color: const Color(0xFF1E2830),
-          child: Container(
-            width: 220,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: MUPhoneColors.border.withValues(alpha: 0.6)),
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF1E2830), Color(0xFF172028)],
-              ),
+    final tooltip = MouseRegion(
+      onEnter: (_) => _hovering = true,
+      onExit: (_) { _hovering = false; Future.delayed(const Duration(milliseconds: 120), () {
+        if (!_hovering) _hide();
+      }); },
+      child: Material(
+        elevation: 6,
+        shadowColor: Colors.black54,
+        borderRadius: BorderRadius.circular(6),
+        color: Colors.transparent,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 180),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: MUPhoneColors.border.withValues(alpha: 0.6)),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF1E2830), Color(0xFF172028)],
             ),
+          ),
+          child: IntrinsicWidth(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(children: [
+                Row(mainAxisSize: MainAxisSize.min, children: [
                   Container(
-                    width: 6, height: 6,
+                    width: 5, height: 5,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: _phaseColor(d.phase),
-                      boxShadow: [BoxShadow(color: _phaseColor(d.phase).withValues(alpha: 0.5), blurRadius: 4)],
+                      boxShadow: [BoxShadow(color: _phaseColor(d.phase).withValues(alpha: 0.5), blurRadius: 3)],
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  Expanded(child: Text(
+                  const SizedBox(width: 5),
+                  Flexible(child: Text(
                     d.displayName,
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: MUPhoneColors.textPrimary),
+                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: MUPhoneColors.textPrimary),
                     overflow: TextOverflow.ellipsis,
                   )),
                 ]),
-                const SizedBox(height: 8),
-                const Divider(height: 1, color: MUPhoneColors.border),
-                const SizedBox(height: 8),
+                const Padding(padding: EdgeInsets.symmetric(vertical: 4), child: Divider(height: 1, color: MUPhoneColors.border)),
                 _InfoRow(label: '序號', value: d.serial),
                 if (d.alias.isNotEmpty)
                   _InfoRow(label: '別名', value: d.alias),
                 _InfoRow(label: '狀態', value: _phaseLabel(d.phase), valueColor: _phaseColor(d.phase)),
                 _InfoRow(label: '畫質', value: quality.toUpperCase(), valueColor: quality == 'fhd' ? MUPhoneColors.primary : MUPhoneColors.textSecondary),
                 _InfoRow(label: 'FPS', value: d.fps > 0 ? '${d.fps}' : '--'),
-                _InfoRow(label: '串流', value: '${d.width} × ${d.height}'),
-                _InfoRow(label: '物理', value: '${d.physicalWidth} × ${d.physicalHeight}'),
+                _InfoRow(label: '串流', value: '${d.width}×${d.height}'),
+                _InfoRow(label: '物理', value: '${d.physicalWidth}×${d.physicalHeight}'),
               ],
             ),
           ),
         ),
       ),
+    );
+
+    return CompositedTransformFollower(
+      link: _link,
+      targetAnchor: Alignment.bottomRight,
+      followerAnchor: Alignment.topRight,
+      offset: const Offset(0, 4),
+      child: tooltip,
     );
   }
 
@@ -220,18 +222,19 @@ class _InfoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: 2),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
-            width: 40,
-            child: Text(label, style: const TextStyle(fontSize: 10, color: MUPhoneColors.textDisabled)),
+            width: 28,
+            child: Text(label, style: const TextStyle(fontSize: 9, color: MUPhoneColors.textDisabled)),
           ),
-          Expanded(
+          const SizedBox(width: 4),
+          Flexible(
             child: Text(value,
-              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: valueColor ?? MUPhoneColors.textPrimary),
+              style: TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: valueColor ?? MUPhoneColors.textPrimary),
               overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
             ),
           ),
         ],

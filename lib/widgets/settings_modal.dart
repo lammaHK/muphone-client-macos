@@ -627,6 +627,8 @@ class _ShortcutSectionState extends State<_ShortcutSection> {
     'language', 'chat', 'camera_alt', 'settings', 'apps', 'phone',
     'message', 'map', 'shopping_cart', 'music_note', 'video_call',
     'terminal', 'play_arrow', 'folder', 'email', 'search', 'home', 'star',
+    'send', 'account_balance_wallet', 'qr_code', 'payments',
+    'photo', 'file_download', 'notifications', 'bookmark', 'share', 'cloud',
   ];
 
   void _addShortcut() {
