@@ -344,16 +344,20 @@ class _MainScreenState extends State<MainScreen> {
       state.updateDevice(id, (d) => d.copyWith(textureId: textureId));
     }
 
-    // Auto-resubscribe after 15s if no live frames arrived
+    // One-shot retry: if no frames after 15s, resubscribe once
     Future.delayed(const Duration(seconds: 15), () {
-      if (_subscribeGen[id] != gen) return; // superseded
+      if (_subscribeGen[id] != gen) return;
       final dev = state.getDevice(id);
-      if (dev != null && dev.textureId != null && !state.isDeviceHidden(dev.serial)) {
-        // Check if device is still showing loading (no frames)
-        // Force resubscribe to get a fresh connection
+      if (dev != null && !dev.hasFrames && !state.isDeviceHidden(dev.serial)) {
+        debugPrint('[subscribe] dev=$id still no frames after 15s — retry once');
         bridge.unsubscribeDevice(id);
         state.updateDevice(id, (d) => d.copyWith(textureId: null));
-        _subscribeAndSetTexture(bridge, state, id, w, h);
+        // Non-recursive: just resubscribe, don't schedule another retry
+        bridge.subscribeDevice(id, width: subW, height: subH).then((tid) {
+          if (tid != null && _subscribeGen[id] == gen) {
+            state.updateDevice(id, (d) => d.copyWith(textureId: tid));
+          }
+        });
       }
     });
   }
