@@ -150,7 +150,11 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> _pasteClipboard(int deviceId) async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     final text = data?.text;
-    if (text == null || text.isEmpty) return;
+    if (text == null || text.isEmpty) {
+      debugPrint('[Paste] Clipboard empty');
+      return;
+    }
+    debugPrint('[Paste] Sending "${text.length > 50 ? text.substring(0, 50) : text}" to dev=$deviceId');
     PlatformBridge.instance.sendText(deviceId, text);
   }
 
