@@ -995,10 +995,10 @@ class _DeviceRow extends StatelessWidget {
           _QualityChip(
             quality: state.getDeviceQuality(dev.serial),
             onChanged: (val) {
+              if (dev.isQualitySwitching) return; // debounce: ignore while switching
               state.setDeviceQuality(dev.serial, val);
               state.updateDevice(dev.deviceId, (d) => d.copyWith(isQualitySwitching: true));
               PlatformBridge.instance.setFpsProfile(dev.deviceId, val);
-              // Fallback: clear loading after 10s even if no ack
               Future.delayed(const Duration(seconds: 10), () {
                 final d = state.getDevice(dev.deviceId);
                 if (d != null && d.isQualitySwitching) {

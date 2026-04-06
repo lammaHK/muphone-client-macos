@@ -335,11 +335,12 @@ class _MainScreenState extends State<MainScreen> {
       }
     }
 
-    // Send FHD profile for devices that were saved as FHD (one-time, causes fresh IDR)
+    // Send saved quality profiles on first device_list (one-time per device)
     for (final dev in state.devices) {
+      if (_fhdProfileSent.contains(dev.deviceId)) continue;
+      _fhdProfileSent.add(dev.deviceId);
       final q = state.getDeviceQuality(dev.serial);
-      if (q == 'fhd' && !_fhdProfileSent.contains(dev.deviceId)) {
-        _fhdProfileSent.add(dev.deviceId);
+      if (q == 'fhd') {
         bridge.setFpsProfile(dev.deviceId, 'fhd');
       }
     }
