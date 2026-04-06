@@ -31,6 +31,10 @@ class _MainScreenState extends State<MainScreen> {
   final Map<int, int> _qualitySwitchGen = {};
   final Set<int> _fhdProfileSent = {};
 
+  final List<_PendingSub> _subQueue = [];
+  int _activeSubCount = 0;
+  static const int _maxConcurrentSubs = 4;
+
   @override
   void initState() {
     super.initState();
@@ -246,6 +250,7 @@ class _MainScreenState extends State<MainScreen> {
         final frid = event['device_id'] as int?;
         if (frid != null) {
           state.updateDevice(frid, (d) => d.copyWith(hasFrames: true));
+          _onDeviceFrameReady(PlatformBridge.instance, state, frid);
         }
 
       case 'fps_update':
@@ -370,7 +375,7 @@ class _MainScreenState extends State<MainScreen> {
         ));
         if ((phase == DevicePhase.online || phase == DevicePhase.locked) &&
             !state.isDeviceHidden(serial)) {
-          _subscribeAndSetTexture(bridge, state, id, width, height);
+          _enqueueSubscribe(bridge, state, id, width, height);
         }
       } else {
         final nowOnline = phase == DevicePhase.online || phase == DevicePhase.locked;
@@ -384,13 +389,12 @@ class _MainScreenState extends State<MainScreen> {
         ));
         if (nowOnline && !state.isDeviceHidden(serial)) {
           if (existing.textureId == null) {
-            _subscribeAndSetTexture(bridge, state, id, width, height);
+            _enqueueSubscribe(bridge, state, id, width, height);
           } else if (dimChanged) {
-            // Resolution changed (quality switch completed) — resubscribe for new dimensions
             debugPrint('[device_list] dev=$id dim changed ${existing.width}x${existing.height} → ${width}x$height — resubscribe');
             bridge.unsubscribeDevice(id);
             state.updateDevice(id, (d) => d.copyWith(textureId: null, hasFrames: false));
-            _subscribeAndSetTexture(bridge, state, id, width, height);
+            _enqueueSubscribe(bridge, state, id, width, height);
           }
         }
       }
@@ -403,27 +407,30 @@ class _MainScreenState extends State<MainScreen> {
       }
     }
 
-    // Send saved quality profiles on first device_list — stagger to avoid overwhelming server
-    int fhdDelay = 0;
-    for (final dev in state.devices) {
-      if (_fhdProfileSent.contains(dev.deviceId)) continue;
-      _fhdProfileSent.add(dev.deviceId);
-      final q = state.getDeviceQuality(dev.serial);
-      if (q == 'fhd') {
-        final devId = dev.deviceId;
-        if (fhdDelay == 0) {
-          bridge.setFpsProfile(devId, 'fhd');
-        } else {
-          Future.delayed(Duration(milliseconds: fhdDelay), () {
-            bridge.setFpsProfile(devId, 'fhd');
-          });
-        }
-        fhdDelay += 3000;
-      }
-    }
+    // Server persists profiles — no need to send on connect.
+    // Quality changes are sent only when user explicitly changes in settings UI.
   }
 
   final Map<int, int> _subscribeGen = {};
+
+  void _enqueueSubscribe(PlatformBridge bridge, AppState state, int id, int w, int h) {
+    if (_subQueue.any((s) => s.deviceId == id)) return;
+    _subQueue.add(_PendingSub(deviceId: id, w: w, h: h));
+    _processSubQueue(bridge, state);
+  }
+
+  void _processSubQueue(PlatformBridge bridge, AppState state) {
+    while (_activeSubCount < _maxConcurrentSubs && _subQueue.isNotEmpty) {
+      final item = _subQueue.removeAt(0);
+      _activeSubCount++;
+      _subscribeAndSetTexture(bridge, state, item.deviceId, item.w, item.h);
+    }
+  }
+
+  void _onDeviceFrameReady(PlatformBridge bridge, AppState state, int deviceId) {
+    _activeSubCount = (_activeSubCount - 1).clamp(0, 99);
+    _processSubQueue(bridge, state);
+  }
 
   Future<void> _subscribeAndSetTexture(PlatformBridge bridge, AppState state, int id, int w, int h) async {
     final gen = (_subscribeGen[id] ?? 0) + 1;
@@ -436,23 +443,15 @@ class _MainScreenState extends State<MainScreen> {
       state.updateDevice(id, (d) => d.copyWith(textureId: textureId));
     }
 
-    // Retry at 5s and 12s if no frames arrived
-    for (final delay in [5, 12]) {
-      Future.delayed(Duration(seconds: delay), () {
-        if (_subscribeGen[id] != gen) return;
-        final dev = state.getDevice(id);
-        if (dev != null && !dev.hasFrames && !state.isDeviceHidden(dev.serial)) {
-          debugPrint('[subscribe] dev=$id no frames after ${delay}s — retry');
-          bridge.unsubscribeDevice(id);
-          state.updateDevice(id, (d) => d.copyWith(textureId: null, hasFrames: false));
-          bridge.subscribeDevice(id, width: subW, height: subH).then((tid) {
-            if (tid != null && _subscribeGen[id] == gen) {
-              state.updateDevice(id, (d) => d.copyWith(textureId: tid));
-            }
-          });
-        }
-      });
-    }
+    // Timeout: if no frames after 6s, release the slot and move on
+    Future.delayed(const Duration(seconds: 6), () {
+      if (_subscribeGen[id] != gen) return;
+      final dev = state.getDevice(id);
+      if (dev != null && !dev.hasFrames) {
+        _activeSubCount = (_activeSubCount - 1).clamp(0, 99);
+        _processSubQueue(bridge, state);
+      }
+    });
   }
 
   void _resubscribeAfterQualitySwitch(PlatformBridge bridge, AppState state, int id) {
@@ -516,4 +515,10 @@ class _MainScreenState extends State<MainScreen> {
       },
     );
   }
+}
+
+class _PendingSub {
+  final int deviceId;
+  final int w, h;
+  _PendingSub({required this.deviceId, required this.w, required this.h});
 }
