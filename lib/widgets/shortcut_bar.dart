@@ -116,15 +116,11 @@ class _InfoBtn extends StatelessWidget {
 
     const lbl = TextStyle(fontSize: 9, color: MUPhoneColors.textDisabled, height: 1.5);
     const val = TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: MUPhoneColors.textPrimary, height: 1.5);
-    final header = TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: MUPhoneColors.textPrimary, height: 1.5);
 
     return TextSpan(children: [
       TextSpan(text: '● ${d.displayName}\n', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: phaseColor, height: 1.6)),
       const TextSpan(text: '─────────────\n', style: TextStyle(fontSize: 7, color: MUPhoneColors.border, height: 1.2)),
       const TextSpan(text: '序號  ', style: lbl), TextSpan(text: '${d.serial}\n', style: val),
-      if (d.alias.isNotEmpty) ...[
-        const TextSpan(text: '別名  ', style: lbl), TextSpan(text: '${d.alias}\n', style: val),
-      ],
       const TextSpan(text: '狀態  ', style: lbl), TextSpan(text: '$phaseLabel\n', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: phaseColor, height: 1.5)),
       const TextSpan(text: '畫質  ', style: lbl), TextSpan(text: '${quality.toUpperCase()}\n', style: val),
       const TextSpan(text: 'FPS   ', style: lbl), TextSpan(text: '${d.fps > 0 ? d.fps : "--"}\n', style: val),

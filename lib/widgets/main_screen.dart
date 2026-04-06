@@ -422,16 +422,18 @@ class _MainScreenState extends State<MainScreen> {
       }
     }
 
-    // Quality sync: send FHD for mismatched devices, but DON'T subscribe them yet.
-    // They'll be subscribed when the server restarts scrcpy and sends a new device_list
-    // with FHD dimensions (triggering the dimChanged path).
+    // Quality sync: delay FHD upgrades until 5s after this device_list
+    // to let all HD devices connect first and stabilise.
     for (final dev in state.devices) {
       if (_fhdProfileSent.contains(dev.deviceId)) continue;
       final clientQ = state.getDeviceQuality(dev.serial);
       if (clientQ == 'fhd' && dev.width <= 400) {
         _fhdProfileSent.add(dev.deviceId);
-        debugPrint('[quality-sync] dev=${dev.deviceId} needs fhd upgrade — sending (skip subscribe)');
-        bridge.setFpsProfile(dev.deviceId, 'fhd');
+        final devId = dev.deviceId;
+        debugPrint('[quality-sync] dev=$devId queued for fhd in 5s');
+        Future.delayed(const Duration(seconds: 5), () {
+          bridge.setFpsProfile(devId, 'fhd');
+        });
       }
     }
   }
