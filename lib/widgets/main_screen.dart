@@ -187,6 +187,7 @@ class _MainScreenState extends State<MainScreen> {
     HardwareKeyboard.instance.addHandler(_onHardwareKey);
 
     final info = await bridge.init();
+    await bridge.setMainWindow(); // mark as main window for close confirmation
     int vramMb = 0;
     if (info != null) {
       vramMb = (info['vram_mb'] as int?) ?? 0;

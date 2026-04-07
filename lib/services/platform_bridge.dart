@@ -47,6 +47,10 @@ class PlatformBridge {
     }
   }
 
+  Future<void> setMainWindow() async {
+    try { await _methodChannel.invokeMethod('set_main_window'); } catch (_) {}
+  }
+
   Future<void> confirmExit() async {
     try {
       await _methodChannel.invokeMethod('confirm_exit');
