@@ -93,16 +93,10 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
         raw.map((e) => ShortcutAction.fromJson(Map<String, dynamic>.from(e as Map))).toList(),
       );
     }
-    // Load alias for window title
+    // Load all aliases into AppState for later matching
     if (data.containsKey('deviceAliases')) {
-      final aliases = data['deviceAliases'] as Map<String, dynamic>? ?? {};
-      for (final entry in aliases.entries) {
-        if (_serial.isNotEmpty && entry.key == _serial) {
-          _alias = entry.value.toString();
-          _updateTitle();
-          break;
-        }
-      }
+      final raw = data['deviceAliases'] as Map<String, dynamic>? ?? {};
+      context.read<AppState>().setDeviceAliasMap(raw.map((k, v) => MapEntry(k, v.toString())));
     }
 
     setState(() => _status = '初始化 D3D11...');
@@ -311,6 +305,7 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
   DeviceState get _deviceState => DeviceState(
     deviceId: widget.deviceId,
     serial: _serial,
+    alias: _alias,
     phase: _connected ? DevicePhase.online : DevicePhase.offline,
     width: _streamW,
     height: _streamH,

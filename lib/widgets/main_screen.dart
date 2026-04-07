@@ -34,7 +34,7 @@ class _MainScreenState extends State<MainScreen> {
   final List<_PendingSub> _subQueue = [];
   final Set<int> _subscribingNow = {};
   int _activeSubCount = 0;
-  static const int _maxConcurrentSubs = 2;
+  static const int _maxConcurrentSubs = 4;
 
   @override
   void initState() {
