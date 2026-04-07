@@ -44,6 +44,11 @@ class ShortcutAction {
       'photo': Icons.photo, 'file_download': Icons.file_download,
       'notifications': Icons.notifications, 'bookmark': Icons.bookmark,
       'share': Icons.share, 'cloud': Icons.cloud,
+      'power_settings_new': Icons.power_settings_new, 'toggle_on': Icons.toggle_on,
+      'location_on': Icons.location_on, 'gps_fixed': Icons.gps_fixed,
+      'navigation': Icons.navigation, 'near_me': Icons.near_me,
+      'wifi': Icons.wifi, 'bluetooth': Icons.bluetooth,
+      'flashlight_on': Icons.flashlight_on, 'dark_mode': Icons.dark_mode,
     };
     return map[name] ?? Icons.apps;
   }

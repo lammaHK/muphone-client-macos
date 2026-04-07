@@ -728,6 +728,8 @@ class _ShortcutSectionState extends State<_ShortcutSection> {
     'terminal', 'play_arrow', 'folder', 'email', 'search', 'home', 'star',
     'send', 'account_balance_wallet', 'qr_code', 'payments',
     'photo', 'file_download', 'notifications', 'bookmark', 'share', 'cloud',
+    'power_settings_new', 'toggle_on', 'location_on', 'gps_fixed',
+    'navigation', 'near_me', 'wifi', 'bluetooth', 'flashlight_on', 'dark_mode',
   ];
 
   void _addShortcut() {
