@@ -34,7 +34,7 @@ class _MainScreenState extends State<MainScreen> {
   final List<_PendingSub> _subQueue = [];
   final Set<int> _subscribingNow = {};
   int _activeSubCount = 0;
-  static const int _maxConcurrentSubs = 1;
+  static const int _maxConcurrentSubs = 2;
 
   @override
   void initState() {
@@ -495,10 +495,10 @@ class _MainScreenState extends State<MainScreen> {
     }
 
     // Long timeout safety net: 30s — should never hit with working IDR gate
-    Future.delayed(const Duration(seconds: 30), () {
+    Future.delayed(const Duration(seconds: 8), () {
       if (_subscribeGen[id] != gen) return;
       if (_subscribingNow.contains(id)) {
-        debugPrint('[sub-queue] dev=$id 30s timeout — releasing slot');
+        debugPrint('[sub-queue] dev=$id 8s timeout — releasing slot');
         _releaseSubSlot(id, bridge, state);
       }
     });

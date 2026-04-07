@@ -85,7 +85,6 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
   Future<void> _init() async {
     final bridge = PlatformBridge.instance;
 
-    // Load persisted shortcuts into AppState
     Persistence.instance.initialize();
     final data = await Persistence.instance.load();
     if (data.containsKey('shortcuts') && mounted) {
@@ -93,6 +92,17 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
       context.read<AppState>().setShortcuts(
         raw.map((e) => ShortcutAction.fromJson(Map<String, dynamic>.from(e as Map))).toList(),
       );
+    }
+    // Load alias for window title
+    if (data.containsKey('deviceAliases')) {
+      final aliases = data['deviceAliases'] as Map<String, dynamic>? ?? {};
+      for (final entry in aliases.entries) {
+        if (_serial.isNotEmpty && entry.key == _serial) {
+          _alias = entry.value.toString();
+          _updateTitle();
+          break;
+        }
+      }
     }
 
     setState(() => _status = '初始化 D3D11...');
@@ -107,8 +117,10 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
     _updateTitle();
   }
 
+  String _alias = '';
+
   void _updateTitle() {
-    final name = _serial.isNotEmpty ? _serial : '裝置 ${widget.deviceId}';
+    final name = _alias.isNotEmpty ? _alias : _serial.isNotEmpty ? _serial : '裝置 ${widget.deviceId}';
     PlatformBridge.instance.setWindowTitle(name);
   }
 
@@ -176,6 +188,9 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
 
       final phase = (d['phase'] as String? ?? '').toLowerCase();
       _serial = d['serial'] as String? ?? '';
+      if (_alias.isEmpty && _serial.isNotEmpty) {
+        _alias = context.read<AppState>().getDeviceAlias(_serial);
+      }
       _updateTitle();
 
       if (phase != 'online' && phase != 'locked') {
