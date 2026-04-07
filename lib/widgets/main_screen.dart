@@ -42,15 +42,11 @@ class _MainScreenState extends State<MainScreen> {
     _initNativeAndConnect();
   }
 
-  Timer? _clipboardTimer;
-  String _lastClipboardHash = '';
-
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_onHardwareKey);
     _eventSub?.cancel();
     _saveTimer?.cancel();
-    _clipboardTimer?.cancel();
     super.dispose();
   }
 
@@ -192,7 +188,6 @@ class _MainScreenState extends State<MainScreen> {
 
     final info = await bridge.init();
     await bridge.setMainWindow();
-    _startClipboardSync();
     int vramMb = 0;
     if (info != null) {
       vramMb = (info['vram_mb'] as int?) ?? 0;
@@ -541,26 +536,6 @@ class _MainScreenState extends State<MainScreen> {
     'failed'   => DevicePhase.failed,
     _          => DevicePhase.offline,
   };
-
-  void _startClipboardSync() {
-    _clipboardTimer = Timer.periodic(const Duration(milliseconds: 800), (_) async {
-      try {
-        final data = await Clipboard.getData(Clipboard.kTextPlain);
-        final text = data?.text ?? '';
-        if (text.isEmpty) return;
-        final hash = text.hashCode.toString();
-        if (hash == _lastClipboardHash) return;
-        _lastClipboardHash = hash;
-        final state = context.read<AppState>();
-        final serial = state.activeSerial;
-        if (serial == null) return;
-        final dev = state.devices.where((d) => d.serial == serial).firstOrNull;
-        if (dev != null && state.connection == ServerConnectionState.connected) {
-          PlatformBridge.instance.sendText(dev.deviceId, text);
-        }
-      } catch (_) {}
-    });
-  }
 
   void _openSettings() {
     showDialog(
