@@ -25,7 +25,8 @@ class ShortcutBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shortcuts = context.watch<AppState>().shortcuts;
+    final allShortcuts = context.watch<AppState>().shortcuts;
+    final shortcuts = allShortcuts.where((s) => s.deviceSerial == null || s.deviceSerial == device.serial).toList();
 
     return Container(
       height: 22,

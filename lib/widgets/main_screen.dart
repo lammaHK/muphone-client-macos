@@ -412,6 +412,10 @@ class _MainScreenState extends State<MainScreen> {
       // Derive FPS from server-reported profile
       final fpsFromProfile = (profile == 'fhd' || profile == 'full') ? 60 : (profile == 'hd') ? 30 : (profile == 'reduced') ? 24 : 0;
 
+      if (profile.isNotEmpty && state.getDeviceQuality(serial) != profile) {
+        state.setDeviceQuality(serial, profile);
+      }
+
       final existing = state.getDevice(id);
       if (existing == null) {
         final savedAlias = state.getDeviceAlias(serial);
@@ -423,7 +427,7 @@ class _MainScreenState extends State<MainScreen> {
         ));
         if ((phase == DevicePhase.online || phase == DevicePhase.locked) &&
             !state.isDeviceHidden(serial)) {
-          final needsFhd = state.getDeviceQuality(serial) == 'fhd' && width <= 400;
+          final needsFhd = state.getDeviceQuality(serial) == 'fhd' && width <= 450;
           if (!needsFhd) {
             _enqueueSubscribe(bridge, state, id, width, height);
           }
@@ -447,7 +451,7 @@ class _MainScreenState extends State<MainScreen> {
           _subscribingNow.remove(id);
         }
         if (nowOnline && !state.isDeviceHidden(serial)) {
-          final needsFhd2 = state.getDeviceQuality(serial) == 'fhd' && width <= 400;
+          final needsFhd2 = state.getDeviceQuality(serial) == 'fhd' && width <= 450;
           if (existing.textureId == null && !needsFhd2) {
             _enqueueSubscribe(bridge, state, id, width, height);
           } else if (dimChanged) {
@@ -472,7 +476,7 @@ class _MainScreenState extends State<MainScreen> {
     for (final dev in state.devices) {
       if (_fhdProfileSent.contains(dev.deviceId)) continue;
       final clientQ = state.getDeviceQuality(dev.serial);
-      if (clientQ == 'fhd' && dev.width <= 400) {
+      if (clientQ == 'fhd' && dev.width <= 450) {
         _fhdProfileSent.add(dev.deviceId);
         final devId = dev.deviceId;
         debugPrint('[quality-sync] dev=$devId queued for fhd in 5s');

@@ -398,7 +398,15 @@ class AppState extends ChangeNotifier {
   void reorderDevice(String serial, int newIndex) {
     final fromIndex = _devices.indexWhere((d) => d.serial == serial);
     if (fromIndex < 0 || fromIndex == newIndex) return;
-    swapDevices(fromIndex, newIndex);
+    
+    final item = _devices.removeAt(fromIndex);
+    _devices.insert(newIndex, item);
+    
+    // Persist: update order map for all devices
+    for (int i = 0; i < _devices.length; i++) {
+      _deviceOrder[_devices[i].serial] = i;
+    }
+    notifyListeners();
   }
 
   void setDeviceOrder(Map<String, int> order) {
