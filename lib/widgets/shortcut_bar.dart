@@ -78,7 +78,7 @@ class _InfoBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final d = device;
-    final quality = d.width > 500 ? 'fhd' : 'hd';
+    final quality = d.height >= 1080 ? 'fhd' : 'hd';
 
     return Tooltip(
       richMessage: _buildRichContent(d, quality),

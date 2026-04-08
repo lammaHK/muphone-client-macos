@@ -427,7 +427,7 @@ class _MainScreenState extends State<MainScreen> {
         ));
         if ((phase == DevicePhase.online || phase == DevicePhase.locked) &&
             !state.isDeviceHidden(serial)) {
-          final needsFhd = state.getDeviceQuality(serial) == 'fhd' && width <= 450;
+          final needsFhd = state.getDeviceQuality(serial) == 'fhd' && height < 1080;
           if (!needsFhd) {
             _enqueueSubscribe(bridge, state, id, width, height);
           }
@@ -451,7 +451,7 @@ class _MainScreenState extends State<MainScreen> {
           _subscribingNow.remove(id);
         }
         if (nowOnline && !state.isDeviceHidden(serial)) {
-          final needsFhd2 = state.getDeviceQuality(serial) == 'fhd' && width <= 450;
+          final needsFhd2 = state.getDeviceQuality(serial) == 'fhd' && height < 1080;
           if (existing.textureId == null && !needsFhd2) {
             _enqueueSubscribe(bridge, state, id, width, height);
           } else if (dimChanged) {
@@ -476,7 +476,7 @@ class _MainScreenState extends State<MainScreen> {
     for (final dev in state.devices) {
       if (_fhdProfileSent.contains(dev.deviceId)) continue;
       final clientQ = state.getDeviceQuality(dev.serial);
-      if (clientQ == 'fhd' && dev.width <= 450) {
+      if (clientQ == 'fhd' && dev.height < 1080) {
         _fhdProfileSent.add(dev.deviceId);
         final devId = dev.deviceId;
         debugPrint('[quality-sync] dev=$devId queued for fhd in 5s');

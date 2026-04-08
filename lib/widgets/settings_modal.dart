@@ -1479,7 +1479,7 @@ class _DeviceRow extends StatelessWidget {
           const SizedBox(width: 6),
           // Quality toggle chip
           _QualityChip(
-            quality: dev.width > 500 ? 'fhd' : 'hd',
+            quality: dev.height >= 1080 ? 'fhd' : 'hd',
             onChanged: (val) {
               if (dev.isQualitySwitching) return; // debounce: ignore while switching
               state.setDeviceQuality(dev.serial, val);
