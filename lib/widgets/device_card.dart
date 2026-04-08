@@ -28,6 +28,10 @@ class _DeviceCardState extends State<DeviceCard> {
   Offset? _dragStart;
   Offset? _dragCurrent;
   bool _isDragging = false;
+  Timer? _scrollTimer;
+  bool _scrollActive = false;
+  double _scrollAccumY = 0;
+  double _scrollCx = 0, _scrollCy = 0;
 
   // Map widget coordinate to device physical coordinate
   int _toDevX(double wx, double widgetW) {
@@ -42,36 +46,41 @@ class _DeviceCardState extends State<DeviceCard> {
 
   @override
   void dispose() {
+    _scrollTimer?.cancel();
+    if (_scrollActive) {
+      PlatformBridge.instance.sendTouchUp(widget.device.deviceId, _scrollCx, _scrollCy);
+    }
     super.dispose();
   }
 
-  void _executeCustomControl(String controlKey, double x, double y) {
-    final state = context.read<AppState>();
-    final cmd = state.customControls[controlKey] ?? 'default';
-    if (cmd == 'default') return;
-
-    if (cmd.startsWith('key:')) {
-      final keycode = int.tryParse(cmd.substring(4)) ?? 0;
-      if (keycode > 0) PlatformBridge.instance.sendKey(widget.device.deviceId, keycode);
-    } else if (cmd.startsWith('adb:')) {
-      final adbCmd = cmd.substring(4);
-      PlatformBridge.instance.sendInput({
-        'type': 'run_shortcut',
-        'device_id': widget.device.deviceId,
-        'shortcut_type': 'adb',
-        'command': adbCmd,
-      });
-    }
-  }
-
   void _handleScroll(double cx, double cy, double dy) {
-    final state = context.read<AppState>();
-    final cmd = state.customControls['scroll'] ?? 'default';
-    if (cmd != 'default') {
-      _executeCustomControl('scroll', cx, cy);
-      return;
+    final devId = widget.device.deviceId;
+    final phys = widget.device.physicalHeight > 0 ? widget.device.physicalHeight : 2400;
+    final step = phys * 0.04; // 4% of screen per tick
+
+    if (!_scrollActive) {
+      _scrollCx = cx;
+      _scrollCy = cy;
+      _scrollAccumY = 0;
+      PlatformBridge.instance.sendTouchDown(devId, cx, cy);
+      _scrollActive = true;
     }
-    PlatformBridge.instance.sendScroll(widget.device.deviceId, cx, cy, -dy.sign);
+
+    // Accumulate scroll delta: dy>0 = scroll down = finger moves UP
+    _scrollAccumY += (dy > 0 ? -step : step);
+    final newY = (_scrollCy + _scrollAccumY).clamp(0.0, phys.toDouble());
+    PlatformBridge.instance.sendTouchMove(devId, _scrollCx, newY);
+
+    // Reset end-timer: release finger after 150ms of no scroll
+    _scrollTimer?.cancel();
+    _scrollTimer = Timer(const Duration(milliseconds: 150), () {
+      if (_scrollActive) {
+        final endY = (_scrollCy + _scrollAccumY).clamp(0.0, phys.toDouble());
+        PlatformBridge.instance.sendTouchUp(devId, _scrollCx, endY);
+        _scrollActive = false;
+        _scrollAccumY = 0;
+      }
+    });
   }
 
   void _sendTap(double wx, double wy, double widgetW, double widgetH) {
@@ -145,43 +154,26 @@ class _DeviceCardState extends State<DeviceCard> {
                 },
                 onPointerDown: (e) {
                   debugPrint('[DeviceCard] onPointerDown buttons=${e.buttons} dev=${widget.device.deviceId}');
-                  final state = context.read<AppState>();
-                  state.setActiveSerial(widget.device.serial);
-                  final x = _toDevX(e.localPosition.dx, ww).toDouble();
-                  final y = _toDevY(e.localPosition.dy, wh).toDouble();
-
+                  context.read<AppState>().setActiveSerial(widget.device.serial);
                   if (e.buttons == kSecondaryMouseButton) {
-                    final cmd = state.customControls['mouseRight'] ?? 'key:4';
-                    if (cmd != 'default') {
-                      _executeCustomControl('mouseRight', x, y);
-                      return;
-                    }
                     PlatformBridge.instance.sendKey(widget.device.deviceId, 4);
                   } else if (e.buttons == kMiddleMouseButton) {
-                    final cmd = state.customControls['mouseMiddle'] ?? 'default';
-                    if (cmd != 'default') {
-                      _executeCustomControl('mouseMiddle', x, y);
-                      return;
-                    }
                     _sendTap(e.localPosition.dx, e.localPosition.dy, ww, wh);
                     Future.delayed(const Duration(milliseconds: 80), () {
                       _sendTap(e.localPosition.dx, e.localPosition.dy, ww, wh);
                     });
                   } else if (e.buttons == kPrimaryMouseButton) {
-                    final cmd = state.customControls['mouseLeft'] ?? 'default';
-                    if (cmd != 'default') {
-                      _executeCustomControl('mouseLeft', x, y);
-                      return;
-                    }
                     _dragStart = e.localPosition;
                     _dragCurrent = e.localPosition;
                     _isDragging = false;
                     // Send touch down immediately
+                    final x = _toDevX(e.localPosition.dx, ww).toDouble();
+                    final y = _toDevY(e.localPosition.dy, wh).toDouble();
                     PlatformBridge.instance.sendTouchDown(widget.device.deviceId, x, y);
                   }
                 },
                 onPointerMove: (e) {
-                  if (_dragStart != null) {
+                  if (_dragStart != null && e.buttons == kPrimaryMouseButton) {
                     _dragCurrent = e.localPosition;
                     _isDragging = true;
                     final x = _toDevX(e.localPosition.dx, ww).toDouble();
@@ -191,8 +183,9 @@ class _DeviceCardState extends State<DeviceCard> {
                 },
                 onPointerUp: (e) {
                   if (_dragStart != null) {
-                    final x = _toDevX(e.localPosition.dx, ww).toDouble();
-                    final y = _toDevY(e.localPosition.dy, wh).toDouble();
+                    final pos = _dragCurrent ?? _dragStart!;
+                    final x = _toDevX(pos.dx, ww).toDouble();
+                    final y = _toDevY(pos.dy, wh).toDouble();
                     PlatformBridge.instance.sendTouchUp(widget.device.deviceId, x, y);
                     _dragStart = null; _dragCurrent = null; _isDragging = false;
                   }
