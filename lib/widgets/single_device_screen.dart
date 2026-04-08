@@ -31,10 +31,6 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
   bool _connected = false;
   bool _isQualitySwitching = false;
   bool _hasFrames = false;
-  Timer? _scrollTimer;
-  bool _scrollActive = false;
-  double _scrollAccumY = 0;
-  double _scrollCx = 0, _scrollCy = 0;
 
   @override
   void initState() {
@@ -44,10 +40,6 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
 
   @override
   void dispose() {
-    _scrollTimer?.cancel();
-    if (_scrollActive) {
-      PlatformBridge.instance.sendTouchUp(widget.deviceId, _scrollCx, _scrollCy);
-    }
     _saveWindowRect();
     _eventSub?.cancel();
     HardwareKeyboard.instance.removeHandler(_onKey);
@@ -226,23 +218,16 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
   }
 
   void _handleScroll(double cx, double cy, double dy) {
-    final step = _physH * 0.04;
-    if (!_scrollActive) {
-      _scrollCx = cx; _scrollCy = cy; _scrollAccumY = 0;
-      PlatformBridge.instance.sendTouchDown(widget.deviceId, cx, cy);
-      _scrollActive = true;
+    final state = context.read<AppState>();
+    final cmd = state.customControls['scroll'] ?? 'default';
+    if (cmd != 'default') {
+      _executeCustomControl('scroll', cx, cy);
+      return;
     }
-    _scrollAccumY += (dy > 0 ? -step : step);
-    final newY = (_scrollCy + _scrollAccumY).clamp(0.0, _physH.toDouble());
-    PlatformBridge.instance.sendTouchMove(widget.deviceId, _scrollCx, newY);
-    _scrollTimer?.cancel();
-    _scrollTimer = Timer(const Duration(milliseconds: 150), () {
-      if (_scrollActive) {
-        final endY = (_scrollCy + _scrollAccumY).clamp(0.0, _physH.toDouble());
-        PlatformBridge.instance.sendTouchUp(widget.deviceId, _scrollCx, endY);
-        _scrollActive = false; _scrollAccumY = 0;
-      }
-    });
+    // dy > 0 means scroll down (content moves up).
+    // In scrcpy, vscroll=1 means scroll up, vscroll=-1 means scroll down.
+    // So we pass -dy.sign to match.
+    PlatformBridge.instance.sendScroll(widget.deviceId, cx, cy, -dy.sign);
   }
 
   bool _onKey(KeyEvent event) {
@@ -253,8 +238,16 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
     if ((key == LogicalKeyboardKey.keyV) && (hw.isControlPressed || hw.isMetaPressed)) {
       _paste(); return true;
     }
-    if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter ||
-        key == LogicalKeyboardKey.space) {
+    if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) {
+      final state = context.read<AppState>();
+      final cmd = state.customControls['enter'] ?? 'key:66';
+      if (cmd != 'default') {
+        _executeCustomControl('enter', 0, 0);
+        return true;
+      }
+      PlatformBridge.instance.sendKey(widget.deviceId, 66); return true;
+    }
+    if (key == LogicalKeyboardKey.space) {
       PlatformBridge.instance.sendKey(widget.deviceId, 66); return true;
     }
     if (key == LogicalKeyboardKey.backspace) {
@@ -373,6 +366,25 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
 
   Offset? _dragStart, _dragCurrent;
 
+  void _executeCustomControl(String controlKey, double x, double y) {
+    final state = context.read<AppState>();
+    final cmd = state.customControls[controlKey] ?? 'default';
+    if (cmd == 'default') return;
+
+    if (cmd.startsWith('key:')) {
+      final keycode = int.tryParse(cmd.substring(4)) ?? 0;
+      if (keycode > 0) PlatformBridge.instance.sendKey(widget.deviceId, keycode);
+    } else if (cmd.startsWith('adb:')) {
+      final adbCmd = cmd.substring(4);
+      PlatformBridge.instance.sendInput({
+        'type': 'run_shortcut',
+        'device_id': widget.deviceId,
+        'shortcut_type': 'adb',
+        'command': adbCmd,
+      });
+    }
+  }
+
   Widget _buildGestureLayer(double ww, double wh) {
     return Listener(
       behavior: HitTestBehavior.opaque,
@@ -387,24 +399,40 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
         }
       },
       onPointerDown: (e) {
+        final state = context.read<AppState>();
+        final x = _toX(e.localPosition.dx, ww).toDouble();
+        final y = _toY(e.localPosition.dy, wh).toDouble();
+
         if (e.buttons == kSecondaryMouseButton) {
+          final cmd = state.customControls['mouseRight'] ?? 'key:4';
+          if (cmd != 'default') {
+            _executeCustomControl('mouseRight', x, y);
+            return;
+          }
           PlatformBridge.instance.sendKey(widget.deviceId, 4);
         } else if (e.buttons == kMiddleMouseButton) {
-          final x = _toX(e.localPosition.dx, ww).toDouble();
-          final y = _toY(e.localPosition.dy, wh).toDouble();
+          final cmd = state.customControls['mouseMiddle'] ?? 'default';
+          if (cmd != 'default') {
+            _executeCustomControl('mouseMiddle', x, y);
+            return;
+          }
           PlatformBridge.instance.sendTap(widget.deviceId, x, y);
           Future.delayed(const Duration(milliseconds: 80), () {
             PlatformBridge.instance.sendTap(widget.deviceId, x, y);
           });
         } else if (e.buttons == kPrimaryMouseButton) {
+          final cmd = state.customControls['mouseLeft'] ?? 'default';
+          if (cmd != 'default') {
+            _executeCustomControl('mouseLeft', x, y);
+            return;
+          }
           _dragStart = e.localPosition;
           _dragCurrent = e.localPosition;
-          PlatformBridge.instance.sendTouchDown(widget.deviceId,
-            _toX(e.localPosition.dx, ww).toDouble(), _toY(e.localPosition.dy, wh).toDouble());
+          PlatformBridge.instance.sendTouchDown(widget.deviceId, x, y);
         }
       },
       onPointerMove: (e) {
-        if (_dragStart != null && e.buttons == kPrimaryMouseButton) {
+        if (_dragStart != null) {
           _dragCurrent = e.localPosition;
           PlatformBridge.instance.sendTouchMove(widget.deviceId,
             _toX(e.localPosition.dx, ww).toDouble(), _toY(e.localPosition.dy, wh).toDouble());
@@ -412,9 +440,8 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
       },
       onPointerUp: (e) {
         if (_dragStart != null) {
-          final pos = _dragCurrent ?? _dragStart!;
           PlatformBridge.instance.sendTouchUp(widget.deviceId,
-            _toX(pos.dx, ww).toDouble(), _toY(pos.dy, wh).toDouble());
+            _toX(e.localPosition.dx, ww).toDouble(), _toY(e.localPosition.dy, wh).toDouble());
           _dragStart = null; _dragCurrent = null;
         }
       },

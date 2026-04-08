@@ -36,14 +36,41 @@ class _MainScreenState extends State<MainScreen> {
   int _activeSubCount = 0;
   static const int _maxConcurrentSubs = 4;
 
+  Timer? _clipboardTimer;
+  String _lastClipboard = '';
+
   @override
   void initState() {
     super.initState();
     _initNativeAndConnect();
+    _clipboardTimer = Timer.periodic(const Duration(seconds: 2), (_) => _syncClipboard());
+  }
+
+  Future<void> _syncClipboard() async {
+    if (!mounted) return;
+    final state = context.read<AppState>();
+    if (state.connection != ServerConnectionState.connected) return;
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      final text = data?.text ?? '';
+      if (text.isNotEmpty && text != _lastClipboard) {
+        _lastClipboard = text;
+        for (final dev in state.devices) {
+          if (dev.phase == DevicePhase.online || dev.phase == DevicePhase.locked) {
+            PlatformBridge.instance.sendInput({
+              'type': 'clipboard_set',
+              'device_id': dev.deviceId,
+              'text': text,
+            });
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   @override
   void dispose() {
+    _clipboardTimer?.cancel();
     HardwareKeyboard.instance.removeHandler(_onHardwareKey);
     _eventSub?.cancel();
     _saveTimer?.cancel();
@@ -85,6 +112,10 @@ class _MainScreenState extends State<MainScreen> {
     if (data.containsKey('settingsShortcutKey')) {
       state.setSettingsShortcutKey(data['settingsShortcutKey'] as String? ?? '=');
     }
+    if (data.containsKey('customControls')) {
+      final raw = data['customControls'] as Map<String, dynamic>? ?? {};
+      state.setCustomControls(raw.map((k, v) => MapEntry(k, v.toString())));
+    }
   }
 
   void _debouncedSave(AppState state) {
@@ -100,6 +131,7 @@ class _MainScreenState extends State<MainScreen> {
         'deviceAliases': state.deviceAliases,
         'shortcuts': state.shortcuts.map((s) => s.toJson()).toList(),
         'settingsShortcutKey': state.settingsShortcutKey,
+        'customControls': state.customControls,
       });
     });
   }
@@ -288,6 +320,7 @@ class _MainScreenState extends State<MainScreen> {
       case 'clipboard_update':
         final text = event['text'] as String?;
         if (text != null && text.isNotEmpty) {
+          _lastClipboard = text;
           Clipboard.setData(ClipboardData(text: text));
           debugPrint('[clipboard] Phone→PC: ${text.length} chars');
         }

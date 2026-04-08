@@ -192,6 +192,10 @@ class PlatformBridge {
   Future<void> sendText(int deviceId, String text) =>
       sendInput({'type': 'text', 'device_id': deviceId, 'text': text});
 
+  /// Convenience: send arbitrary ADB command
+  Future<void> sendAdbCommand(int deviceId, String command) =>
+      sendInput({'type': 'adb', 'device_id': deviceId, 'command': command});
+
   Future<Map<String, int>?> getWindowRect() async {
     try {
       final r = await _methodChannel.invokeMethod('get_window_rect');

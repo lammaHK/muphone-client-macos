@@ -12,16 +12,18 @@ class ShortcutAction {
   final String icon;
   final String type; // 'app' or 'adb'
   final String command;
+  final String? deviceSerial; // null means global
 
-  const ShortcutAction({required this.label, this.icon = 'apps', this.type = 'app', required this.command});
+  const ShortcutAction({required this.label, this.icon = 'apps', this.type = 'app', required this.command, this.deviceSerial});
 
-  Map<String, dynamic> toJson() => {'label': label, 'icon': icon, 'type': type, 'command': command};
+  Map<String, dynamic> toJson() => {'label': label, 'icon': icon, 'type': type, 'command': command, 'deviceSerial': deviceSerial};
 
   factory ShortcutAction.fromJson(Map<String, dynamic> j) => ShortcutAction(
     label: j['label'] as String? ?? '',
     icon: j['icon'] as String? ?? 'apps',
     type: j['type'] as String? ?? 'app',
     command: j['command'] as String? ?? '',
+    deviceSerial: j['deviceSerial'] as String?,
   );
 
   static const List<ShortcutAction> defaults = [
@@ -164,6 +166,13 @@ class AppState extends ChangeNotifier {
   Map<String, String> _deviceQuality = {};  // serial → 'hd' or 'fhd'
   Map<String, String> _deviceAliases = {};  // serial → alias
   List<ShortcutAction> _shortcuts = List.of(ShortcutAction.defaults);
+  Map<String, String> _customControls = {
+    'mouseLeft': 'default',
+    'mouseMiddle': 'default',
+    'mouseRight': 'key:4',
+    'scroll': 'default',
+    'enter': 'key:66',
+  };
 
   ServerConnectionState get connection => _connection;
   List<DeviceState> get devices => List.unmodifiable(_devices);
@@ -183,6 +192,12 @@ class AppState extends ChangeNotifier {
   String getDeviceQuality(String serial) => _deviceQuality[serial] ?? 'hd';
   Map<String, String> get deviceAliases => Map.unmodifiable(_deviceAliases);
   List<ShortcutAction> get shortcuts => List.unmodifiable(_shortcuts);
+  Map<String, String> get customControls => Map.unmodifiable(_customControls);
+
+  void setCustomControls(Map<String, String> map) {
+    _customControls = Map.from(map);
+    notifyListeners();
+  }
 
   void setShortcuts(List<ShortcutAction> list) {
     _shortcuts = List.of(list);

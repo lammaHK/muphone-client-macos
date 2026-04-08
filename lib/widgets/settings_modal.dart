@@ -35,6 +35,8 @@ class SettingsModal extends StatelessWidget {
                       const SizedBox(height: 22),
                       _ShortcutSection(state: state),
                       const SizedBox(height: 22),
+                      _CustomControlsSection(state: state),
+                      const SizedBox(height: 22),
                       _DeviceListSection(state: state),
                     ],
                   ),
@@ -1189,6 +1191,104 @@ class _DeviceRow extends StatelessWidget {
           }, child: const Text('確認')),
         ],
       ),
+    );
+  }
+}
+
+class _CustomControlsSection extends StatelessWidget {
+  const _CustomControlsSection({required this.state});
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final controls = state.customControls;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionTitle(icon: Icons.mouse, title: '滑鼠與鍵盤映射'),
+        const SizedBox(height: 10),
+        _SectionBox(
+          child: Column(
+            children: [
+              _ControlRow(label: '滑鼠左鍵', keyName: 'mouseLeft', value: controls['mouseLeft'] ?? 'default', state: state),
+              const Divider(color: MUPhoneColors.border, height: 16),
+              _ControlRow(label: '滑鼠中鍵', keyName: 'mouseMiddle', value: controls['mouseMiddle'] ?? 'default', state: state),
+              const Divider(color: MUPhoneColors.border, height: 16),
+              _ControlRow(label: '滑鼠右鍵', keyName: 'mouseRight', value: controls['mouseRight'] ?? 'key:4', state: state),
+              const Divider(color: MUPhoneColors.border, height: 16),
+              _ControlRow(label: '滑鼠滾輪', keyName: 'scroll', value: controls['scroll'] ?? 'default', state: state),
+              const Divider(color: MUPhoneColors.border, height: 16),
+              _ControlRow(label: 'Enter 鍵', keyName: 'enter', value: controls['enter'] ?? 'key:66', state: state),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ControlRow extends StatelessWidget {
+  const _ControlRow({required this.label, required this.keyName, required this.value, required this.state});
+  final String label;
+  final String keyName;
+  final String value;
+  final AppState state;
+
+  void _edit(BuildContext context) {
+    final ctl = TextEditingController(text: value);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: MUPhoneColors.card,
+        title: Text('編輯 $label 映射', style: const TextStyle(fontSize: 14, color: MUPhoneColors.textPrimary)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('支援格式：\n- default (預設行為)\n- key:<keycode> (例如 key:4 為返回)\n- adb:<command> (例如 adb:shell input tap 100 100)',
+              style: TextStyle(fontSize: 11, color: MUPhoneColors.textSecondary)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctl, autofocus: true,
+              style: const TextStyle(fontSize: 13, color: MUPhoneColors.textPrimary),
+              decoration: const InputDecoration(
+                hintText: '輸入映射指令...',
+                hintStyle: TextStyle(color: MUPhoneColors.textDisabled),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(onPressed: () {
+            final val = ctl.text.trim();
+            if (val.isNotEmpty) {
+              final map = Map<String, String>.from(state.customControls);
+              map[keyName] = val;
+              state.setCustomControls(map);
+            }
+            Navigator.pop(ctx);
+          }, child: const Text('確認')),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(width: 80, child: Text(label, style: const TextStyle(fontSize: 12, color: MUPhoneColors.textSecondary))),
+        Expanded(
+          child: Text(value, style: const TextStyle(fontSize: 12, color: MUPhoneColors.primary, fontFamily: 'monospace')),
+        ),
+        IconButton(
+          icon: const Icon(Icons.edit, size: 14, color: MUPhoneColors.textDisabled),
+          onPressed: () => _edit(context),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+        ),
+      ],
     );
   }
 }

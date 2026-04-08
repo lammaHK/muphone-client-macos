@@ -143,12 +143,11 @@ class MuphoneEngine {
             msg["y"] = args["y"]
 
         case "scroll":
-            msg["type"] = "touch_event"
+            msg["type"] = "scroll"
             msg["device_id"] = args["device_id"]
-            let delta = args["delta"] as? Double ?? 0
-            msg["action"] = delta > 0 ? "scroll_down" : "scroll_up"
             msg["x"] = args["x"]
             msg["y"] = args["y"]
+            msg["delta"] = args["delta"]
 
         case "swipe":
             msg["type"] = "touch_sequence"
@@ -162,6 +161,17 @@ class MuphoneEngine {
             msg["type"] = "key_event"
             msg["device_id"] = args["device_id"]
             msg["keycode"] = -1
+            msg["text"] = args["text"]
+
+        case "run_shortcut":
+            msg["type"] = "run_shortcut"
+            msg["device_id"] = args["device_id"]
+            msg["shortcut_type"] = args["shortcut_type"]
+            msg["command"] = args["command"]
+
+        case "clipboard_set":
+            msg["type"] = "clipboard_set"
+            msg["device_id"] = args["device_id"]
             msg["text"] = args["text"]
 
         default:
