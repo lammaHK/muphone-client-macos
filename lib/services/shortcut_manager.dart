@@ -26,6 +26,16 @@ class DeselectAllIntent extends Intent {
 }
 
 LogicalKeyboardKey _keyFromString(String key) {
+  final k = key.toLowerCase();
+  if (k.length == 1) {
+    final code = k.codeUnitAt(0);
+    if (code >= 97 && code <= 122) { // a-z
+      return LogicalKeyboardKey(0x00000000060 + (code - 97));
+    }
+    if (code >= 48 && code <= 57) { // 0-9
+      return LogicalKeyboardKey(0x00000000030 + (code - 48));
+    }
+  }
   const map = {
     '=': LogicalKeyboardKey.equal,
     '`': LogicalKeyboardKey.backquote,
@@ -49,8 +59,13 @@ LogicalKeyboardKey _keyFromString(String key) {
     'f10': LogicalKeyboardKey.f10,
     'f11': LogicalKeyboardKey.f11,
     'f12': LogicalKeyboardKey.f12,
+    'tab': LogicalKeyboardKey.tab,
+    'enter': LogicalKeyboardKey.enter,
+    'space': LogicalKeyboardKey.space,
+    'escape': LogicalKeyboardKey.escape,
+    'backspace': LogicalKeyboardKey.backspace,
   };
-  return map[key.toLowerCase()] ?? LogicalKeyboardKey.equal;
+  return map[k] ?? LogicalKeyboardKey.equal;
 }
 
 class MUPhoneShortcutManager extends StatelessWidget {

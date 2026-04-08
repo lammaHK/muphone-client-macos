@@ -172,6 +172,9 @@ class AppState extends ChangeNotifier {
     'mouseRight': 'key:4',
     'scroll': 'default',
     'enter': 'key:66',
+    'space': 'key:66',
+    'backspace': 'key:67',
+    'paste': 'default',
   };
 
   ServerConnectionState get connection => _connection;

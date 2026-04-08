@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -149,6 +150,8 @@ class _KeyCaptureDialogState extends State<_KeyCaptureDialog> {
   String? _keyLabel(KeyEvent event) {
     final key = event.logicalKey;
     if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.enter) return null;
+    
+    // Check specific allowed keys first
     final allowed = {
       LogicalKeyboardKey.equal: '=', LogicalKeyboardKey.minus: '-',
       LogicalKeyboardKey.backquote: '`', LogicalKeyboardKey.bracketLeft: '[',
@@ -161,8 +164,21 @@ class _KeyCaptureDialogState extends State<_KeyCaptureDialog> {
       LogicalKeyboardKey.f7: 'F7', LogicalKeyboardKey.f8: 'F8',
       LogicalKeyboardKey.f9: 'F9', LogicalKeyboardKey.f10: 'F10',
       LogicalKeyboardKey.f11: 'F11', LogicalKeyboardKey.f12: 'F12',
+      LogicalKeyboardKey.tab: 'Tab', LogicalKeyboardKey.space: 'Space',
+      LogicalKeyboardKey.backspace: 'Backspace',
     };
-    return allowed[key];
+    if (allowed.containsKey(key)) return allowed[key];
+
+    // Check a-z and 0-9
+    final char = event.character;
+    if (char != null && char.length == 1) {
+      final code = char.toLowerCase().codeUnitAt(0);
+      if ((code >= 97 && code <= 122) || (code >= 48 && code <= 57)) {
+        return char.toUpperCase();
+      }
+    }
+    
+    return null;
   }
 
   @override
@@ -826,35 +842,87 @@ class _ShortcutSectionState extends State<_ShortcutSection> {
                   const SizedBox(height: 12),
                   const Text('目標裝置', style: TextStyle(fontSize: 10, color: MUPhoneColors.textDisabled)),
                   const SizedBox(height: 4),
-                  Container(
-                    height: 28,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    decoration: BoxDecoration(
-                      color: MUPhoneColors.background,
-                      borderRadius: BorderRadius.circular(5),
-                      border: Border.all(color: MUPhoneColors.border, width: 0.5),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String?>(
-                        value: selectedSerial,
-                        isExpanded: true,
-                        dropdownColor: MUPhoneColors.card,
-                        icon: const Icon(Icons.arrow_drop_down, size: 16, color: MUPhoneColors.textDisabled),
-                        style: const TextStyle(fontSize: 12, color: MUPhoneColors.textPrimary),
-                        items: [
-                          const DropdownMenuItem<String?>(
-                            value: null,
-                            child: Text('全域 (所有裝置)'),
+                  InkWell(
+                    onTap: () {
+                      showModalBottomSheet(
+                        context: context,
+                        backgroundColor: Colors.transparent,
+                        builder: (ctx) => Container(
+                          decoration: const BoxDecoration(
+                            color: MUPhoneColors.card,
+                            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
                           ),
-                          ...widget.state.devices.map((d) {
-                            final name = d.alias.isNotEmpty ? d.alias : d.serial;
-                            return DropdownMenuItem<String?>(
-                              value: d.serial,
-                              child: Text('$name (${d.serial})'),
-                            );
-                          }),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                margin: const EdgeInsets.only(top: 8, bottom: 16),
+                                width: 40, height: 4,
+                                decoration: BoxDecoration(
+                                  color: MUPhoneColors.border,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                              const Text('選擇目標裝置', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: MUPhoneColors.textPrimary)),
+                              const SizedBox(height: 16),
+                              ListTile(
+                                leading: const Icon(Icons.language, color: MUPhoneColors.textSecondary),
+                                title: const Text('全域 (所有裝置)', style: TextStyle(color: MUPhoneColors.textPrimary)),
+                                trailing: selectedSerial == null ? const Icon(Icons.check, color: MUPhoneColors.primary) : null,
+                                onTap: () {
+                                  setDialogState(() => selectedSerial = null);
+                                  Navigator.pop(ctx);
+                                },
+                              ),
+                              const Divider(height: 1, color: MUPhoneColors.border),
+                              Expanded(
+                                child: ListView.builder(
+                                  itemCount: widget.state.devices.length,
+                                  itemBuilder: (ctx, i) {
+                                    final d = widget.state.devices[i];
+                                    final name = d.alias.isNotEmpty ? d.alias : d.serial;
+                                    final isSelected = selectedSerial == d.serial;
+                                    return ListTile(
+                                      leading: const Icon(Icons.phone_android, color: MUPhoneColors.primary),
+                                      title: Text(name, style: const TextStyle(color: MUPhoneColors.textPrimary)),
+                                      subtitle: Text(d.serial, style: const TextStyle(fontSize: 10, color: MUPhoneColors.textDisabled)),
+                                      trailing: isSelected ? const Icon(Icons.check, color: MUPhoneColors.primary) : null,
+                                      onTap: () {
+                                        setDialogState(() => selectedSerial = d.serial);
+                                        Navigator.pop(ctx);
+                                      },
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      height: 32,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: MUPhoneColors.background,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: MUPhoneColors.border, width: 0.5),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(selectedSerial == null ? Icons.language : Icons.phone_android, size: 14, color: MUPhoneColors.textSecondary),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              selectedSerial == null ? '全域 (所有裝置)' : (() {
+                                final d = widget.state.devices.where((d) => d.serial == selectedSerial).firstOrNull;
+                                return d != null ? (d.alias.isNotEmpty ? '${d.alias} (${d.serial})' : d.serial) : selectedSerial!;
+                              })(),
+                              style: const TextStyle(fontSize: 12, color: MUPhoneColors.textPrimary),
+                            ),
+                          ),
+                          const Icon(Icons.arrow_drop_down, size: 16, color: MUPhoneColors.textDisabled),
                         ],
-                        onChanged: (val) => setDialogState(() => selectedSerial = val),
                       ),
                     ),
                   ),
@@ -885,24 +953,39 @@ class _ShortcutSectionState extends State<_ShortcutSection> {
                   const SizedBox(height: 12),
                   const Text('圖標', style: TextStyle(fontSize: 10, color: MUPhoneColors.textDisabled)),
                   const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 4, runSpacing: 4,
-                    children: _iconOptions.map((name) {
-                      final active = selectedIcon == name;
-                      return GestureDetector(
-                        onTap: () => setDialogState(() => selectedIcon = name),
-                        child: Container(
-                          width: 28, height: 28,
-                          decoration: BoxDecoration(
-                            color: active ? MUPhoneColors.primary.withValues(alpha: 0.2) : MUPhoneColors.background,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: active ? MUPhoneColors.primary : MUPhoneColors.border.withValues(alpha: 0.3)),
+                  Container(
+                    height: 120,
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: MUPhoneColors.background,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: MUPhoneColors.border, width: 0.5),
+                    ),
+                    child: GridView.builder(
+                      shrinkWrap: true,
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 8,
+                        mainAxisSpacing: 6,
+                        crossAxisSpacing: 6,
+                      ),
+                      itemCount: _iconOptions.length,
+                      itemBuilder: (ctx, i) {
+                        final name = _iconOptions[i];
+                        final active = selectedIcon == name;
+                        return GestureDetector(
+                          onTap: () => setDialogState(() => selectedIcon = name),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: active ? MUPhoneColors.primary.withValues(alpha: 0.2) : MUPhoneColors.card,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: active ? MUPhoneColors.primary : MUPhoneColors.border.withValues(alpha: 0.3)),
+                            ),
+                            child: Icon(ShortcutAction.iconData(name), size: 16,
+                              color: active ? MUPhoneColors.primary : MUPhoneColors.textSecondary),
                           ),
-                          child: Icon(ShortcutAction.iconData(name), size: 14,
-                            color: active ? MUPhoneColors.primary : MUPhoneColors.textSecondary),
-                        ),
-                      );
-                    }).toList(),
+                        );
+                      },
+                    ),
                   ),
                 ],
               ),
@@ -950,14 +1033,26 @@ class _ShortcutSectionState extends State<_ShortcutSection> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => const AlertDialog(
-        backgroundColor: MUPhoneColors.card,
-        content: Row(
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(width: 16),
-            Text('正在讀取應用程式列表...', style: TextStyle(color: MUPhoneColors.textPrimary)),
-          ],
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            decoration: const BoxDecoration(
+              color: MUPhoneColors.card,
+              borderRadius: BorderRadius.all(Radius.circular(12)),
+              boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, 4))],
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: MUPhoneColors.primary)),
+                SizedBox(width: 16),
+                Text('正在讀取應用程式列表...', style: TextStyle(color: MUPhoneColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w500)),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -965,7 +1060,10 @@ class _ShortcutSectionState extends State<_ShortcutSection> {
     try {
       List<Set<String>> allPackages = [];
       for (final d in devicesToQuery) {
-        final res = await PlatformBridge.instance.adbCommand(d.serial, 'shell', ['pm', 'list', 'packages']);
+        final res = await PlatformBridge.instance.adbCommand(d.serial, 'shell', ['pm', 'list', 'packages']).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () => throw TimeoutException('讀取裝置 ${d.serial} 逾時'),
+        );
         if (res != null && res['exit_code'] == 0) {
           final stdout = res['stdout'] as String? ?? '';
           final lines = stdout.split('\n');
@@ -998,33 +1096,68 @@ class _ShortcutSectionState extends State<_ShortcutSection> {
 
       showDialog(
         context: context,
-        builder: (ctx) => AlertDialog(
+        builder: (ctx) => Dialog(
           backgroundColor: MUPhoneColors.card,
-          title: const Text('選擇應用程式', style: TextStyle(color: MUPhoneColors.textPrimary, fontSize: 14)),
-          content: SizedBox(
-            width: 300,
-            height: 400,
-            child: ListView.builder(
-              itemCount: sorted.length,
-              itemBuilder: (context, index) {
-                final pkg = sorted[index];
-                return ListTile(
-                  title: Text(pkg, style: const TextStyle(color: MUPhoneColors.textPrimary, fontSize: 12)),
-                  onTap: () {
-                    cmdCtl.text = pkg;
-                    if (labelCtl.text.isEmpty) {
-                      final parts = pkg.split('.');
-                      labelCtl.text = parts.last;
-                    }
-                    Navigator.pop(ctx);
-                  },
-                );
-              },
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: MUPhoneColors.border)),
+          child: Container(
+            width: 360,
+            height: 500,
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('選擇應用程式', style: TextStyle(color: MUPhoneColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Text('共找到 ${sorted.length} 個應用程式', style: const TextStyle(color: MUPhoneColors.textDisabled, fontSize: 11)),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: MUPhoneColors.background,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: MUPhoneColors.border, width: 0.5),
+                    ),
+                    child: ListView.separated(
+                      itemCount: sorted.length,
+                      separatorBuilder: (_, __) => Divider(height: 1, color: MUPhoneColors.border.withValues(alpha: 0.3), indent: 12, endIndent: 12),
+                      itemBuilder: (context, index) {
+                        final pkg = sorted[index];
+                        return InkWell(
+                          onTap: () {
+                            cmdCtl.text = pkg;
+                            if (labelCtl.text.isEmpty) {
+                              final parts = pkg.split('.');
+                              labelCtl.text = parts.last;
+                            }
+                            Navigator.pop(ctx);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.android, size: 16, color: MUPhoneColors.primary),
+                                const SizedBox(width: 12),
+                                Expanded(child: Text(pkg, style: const TextStyle(color: MUPhoneColors.textPrimary, fontSize: 12))),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: TextButton.styleFrom(foregroundColor: MUPhoneColors.textSecondary),
+                    child: const Text('取消'),
+                  ),
+                ),
+              ],
             ),
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          ],
         ),
       );
     } catch (e) {
@@ -1211,6 +1344,17 @@ class _ShortcutRow extends StatelessWidget {
                 color: action.type == 'app' ? MUPhoneColors.primary : MUPhoneColors.statusLockedOther)),
           ),
           const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(
+              color: action.deviceSerial == null ? MUPhoneColors.textDisabled.withValues(alpha: 0.1) : MUPhoneColors.statusOnline.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(action.deviceSerial == null ? '全域' : action.deviceSerial!,
+              style: TextStyle(fontSize: 8, fontWeight: FontWeight.w600,
+                color: action.deviceSerial == null ? MUPhoneColors.textDisabled : MUPhoneColors.statusOnline)),
+          ),
+          const SizedBox(width: 6),
           Expanded(child: Text(action.command,
             style: const TextStyle(fontSize: 9, color: MUPhoneColors.textDisabled),
             overflow: TextOverflow.ellipsis)),
@@ -1335,7 +1479,7 @@ class _DeviceRow extends StatelessWidget {
           const SizedBox(width: 6),
           // Quality toggle chip
           _QualityChip(
-            quality: state.getDeviceQuality(dev.serial),
+            quality: dev.width > 500 ? 'fhd' : 'hd',
             onChanged: (val) {
               if (dev.isQualitySwitching) return; // debounce: ignore while switching
               state.setDeviceQuality(dev.serial, val);

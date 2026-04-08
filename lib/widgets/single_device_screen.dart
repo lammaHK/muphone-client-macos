@@ -234,12 +234,17 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
     if (event is KeyUpEvent) return false;
     final key = event.logicalKey;
     final hw = HardwareKeyboard.instance;
+    final state = context.read<AppState>();
 
     if ((key == LogicalKeyboardKey.keyV) && (hw.isControlPressed || hw.isMetaPressed)) {
+      final cmd = state.customControls['paste'] ?? 'default';
+      if (cmd != 'default') {
+        _executeCustomControl('paste', 0, 0);
+        return true;
+      }
       _paste(); return true;
     }
     if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) {
-      final state = context.read<AppState>();
       final cmd = state.customControls['enter'] ?? 'key:66';
       if (cmd != 'default') {
         _executeCustomControl('enter', 0, 0);
@@ -248,9 +253,19 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
       PlatformBridge.instance.sendKey(widget.deviceId, 66); return true;
     }
     if (key == LogicalKeyboardKey.space) {
+      final cmd = state.customControls['space'] ?? 'key:66';
+      if (cmd != 'default') {
+        _executeCustomControl('space', 0, 0);
+        return true;
+      }
       PlatformBridge.instance.sendKey(widget.deviceId, 66); return true;
     }
     if (key == LogicalKeyboardKey.backspace) {
+      final cmd = state.customControls['backspace'] ?? 'key:67';
+      if (cmd != 'default') {
+        _executeCustomControl('backspace', 0, 0);
+        return true;
+      }
       PlatformBridge.instance.sendKey(widget.deviceId, 67); return true;
     }
     final ch = event.character;
