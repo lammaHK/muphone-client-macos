@@ -36,6 +36,8 @@ class SettingsModal extends StatelessWidget {
                       const SizedBox(height: 22),
                       _ShortcutSection(state: state),
                       const SizedBox(height: 22),
+                      _WindowBehaviorSection(state: state),
+                      const SizedBox(height: 22),
                       _CustomControlsSection(state: state),
                       const SizedBox(height: 22),
                       _DeviceListSection(state: state),
@@ -1368,6 +1370,101 @@ class _ShortcutRow extends StatelessWidget {
             onPressed: onDelete)),
         ],
       ),
+    );
+  }
+}
+
+class _WindowBehaviorSection extends StatelessWidget {
+  const _WindowBehaviorSection({required this.state});
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionTitle(icon: Icons.open_in_new, title: '視窗行為'),
+        const SizedBox(height: 10),
+        _SectionBox(
+          child: Column(
+            children: [
+              _WindowBehaviorRow(
+                title: '記住主視窗位置',
+                description: '儲存主視窗位置與尺寸，重新啟動時自動還原。',
+                value: state.rememberMainWindowPlacement,
+                onChanged: state.setRememberMainWindowPlacement,
+              ),
+              Divider(height: 16, color: MUPhoneColors.border.withValues(alpha: 0.35)),
+              _WindowBehaviorRow(
+                title: '記住獨立視窗位置',
+                description: '依裝置視窗分別儲存位置與尺寸。',
+                value: state.rememberDetachedWindowPlacement,
+                onChanged: state.setRememberDetachedWindowPlacement,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _WindowBehaviorRow extends StatelessWidget {
+  const _WindowBehaviorRow({
+    required this.title,
+    required this.description,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String title;
+  final String description;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: MUPhoneColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                description,
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: MUPhoneColors.textDisabled,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: 32,
+          height: 18,
+          child: Transform.scale(
+            scale: 0.65,
+            child: Switch(
+              value: value,
+              activeColor: MUPhoneColors.statusOnline,
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

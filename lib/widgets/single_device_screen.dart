@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../services/persistence.dart';
 import '../services/platform_bridge.dart';
+import '../services/wheel_gesture_mapper.dart';
 import '../theme/muphone_theme.dart';
 import 'nav_bar.dart';
 import 'shortcut_bar.dart';
@@ -31,47 +30,101 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
   bool _connected = false;
   bool _isQualitySwitching = false;
   bool _hasFrames = false;
+  late final WheelGestureMapper _wheelMapper;
+  bool _rememberDetachedWindowPlacement = true;
+  Map<String, Map<String, int>> _detachedWindowRects = {};
 
   @override
   void initState() {
     super.initState();
+    _wheelMapper = WheelGestureMapper(widget.deviceId);
     _init();
   }
 
   @override
   void dispose() {
-    _saveWindowRect();
+    _wheelMapper.dispose(physicalHeight: _physH);
+    if (_rememberDetachedWindowPlacement) {
+      _saveWindowRect();
+    } else {
+      _detachedWindowRects.remove(_deviceKey);
+      unawaited(_saveWindowPreferences());
+    }
     _eventSub?.cancel();
     HardwareKeyboard.instance.removeHandler(_onKey);
     super.dispose();
   }
 
-  String get _rectFile {
-    final dir = File(Platform.resolvedExecutable).parent.path;
-    return '$dir${Platform.pathSeparator}window_${widget.deviceId}.json';
+  String get _deviceKey => widget.deviceId.toString();
+
+  Map<String, int>? _normalizeWindowRect(
+    Map<String, int>? rect,
+    Map<String, int>? bounds,
+  ) {
+    if (rect == null) return null;
+    var x = rect['x'] ?? 0;
+    var y = rect['y'] ?? 0;
+    var width = rect['width'] ?? 0;
+    var height = rect['height'] ?? 0;
+    if (width <= 0 || height <= 0) return null;
+
+    if (bounds == null) return {'x': x, 'y': y, 'width': width, 'height': height};
+
+    final bx = bounds['x'] ?? 0;
+    final by = bounds['y'] ?? 0;
+    final bw = bounds['width'] ?? 0;
+    final bh = bounds['height'] ?? 0;
+    if (bw <= 0 || bh <= 0) return {'x': x, 'y': y, 'width': width, 'height': height};
+
+    const minW = 360;
+    const minH = 320;
+    width = width.clamp(minW, bw);
+    height = height.clamp(minH, bh);
+    final maxX = bx + bw - width;
+    final maxY = by + bh - height;
+    x = maxX >= bx ? x.clamp(bx, maxX) : bx;
+    y = maxY >= by ? y.clamp(by, maxY) : by;
+    return {'x': x, 'y': y, 'width': width, 'height': height};
   }
 
-  Future<void> _restoreWindowRect() async {
+  Future<bool> _restoreWindowRect() async {
+    if (!_rememberDetachedWindowPlacement) return false;
+    final rect = _detachedWindowRects[_deviceKey];
+    if (rect == null) return false;
     try {
-      final f = File(_rectFile);
-      if (await f.exists()) {
-        final data = jsonDecode(await f.readAsString());
-        if (data is Map) {
-          await PlatformBridge.instance.setWindowRect(
-            data['x'] as int? ?? 100, data['y'] as int? ?? 100,
-            data['width'] as int? ?? 360, data['height'] as int? ?? 820);
-        }
-      }
-    } catch (_) {}
+      final bounds = await PlatformBridge.instance.getDisplayBounds();
+      final normalized = _normalizeWindowRect(rect, bounds);
+      if (normalized == null) return false;
+      await PlatformBridge.instance.setWindowRect(
+        normalized['x']!,
+        normalized['y']!,
+        normalized['width']!,
+        normalized['height']!,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _saveWindowRect() async {
+    if (!_rememberDetachedWindowPlacement) return;
     try {
       final rect = await PlatformBridge.instance.getWindowRect();
-      if (rect != null) {
-        await File(_rectFile).writeAsString(jsonEncode(rect));
-      }
+      if (rect == null) return;
+      final bounds = await PlatformBridge.instance.getDisplayBounds();
+      final normalized = _normalizeWindowRect(rect, bounds);
+      if (normalized == null) return;
+      _detachedWindowRects[_deviceKey] = normalized;
+      await _saveWindowPreferences();
     } catch (_) {}
+  }
+
+  Future<void> _saveWindowPreferences() async {
+    final data = await Persistence.instance.load();
+    data['rememberDetachedWindowPlacement'] = _rememberDetachedWindowPlacement;
+    data['detachedWindowRects'] = _detachedWindowRects;
+    await Persistence.instance.save(data);
   }
 
   Future<void> _init() async {
@@ -89,6 +142,24 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
     if (data.containsKey('deviceAliases')) {
       final raw = data['deviceAliases'] as Map<String, dynamic>? ?? {};
       context.read<AppState>().setDeviceAliasMap(raw.map((k, v) => MapEntry(k, v.toString())));
+    }
+    if (data.containsKey('customControls')) {
+      final raw = data['customControls'] as Map<String, dynamic>? ?? {};
+      context.read<AppState>().setCustomControls(raw.map((k, v) => MapEntry(k, v.toString())));
+    }
+    _rememberDetachedWindowPlacement =
+        data['rememberDetachedWindowPlacement'] as bool? ?? true;
+    final rawRects = data['detachedWindowRects'] as Map<String, dynamic>? ?? {};
+    _detachedWindowRects = {};
+    for (final entry in rawRects.entries) {
+      final rect = entry.value;
+      if (rect is! Map) continue;
+      _detachedWindowRects[entry.key] = {
+        'x': (rect['x'] as num?)?.toInt() ?? 0,
+        'y': (rect['y'] as num?)?.toInt() ?? 0,
+        'width': (rect['width'] as num?)?.toInt() ?? 0,
+        'height': (rect['height'] as num?)?.toInt() ?? 0,
+      };
     }
 
     setState(() => _status = '初始化 D3D11...');
@@ -224,10 +295,7 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
       _executeCustomControl('scroll', cx, cy);
       return;
     }
-    // dy > 0 means scroll down (content moves up).
-    // In scrcpy, vscroll=1 means scroll up, vscroll=-1 means scroll down.
-    // So we pass -dy.sign to match.
-    PlatformBridge.instance.sendScroll(widget.deviceId, cx, cy, -dy.sign);
+    _wheelMapper.handle(x: cx, y: cy, deltaY: dy, physicalHeight: _physH);
   }
 
   bool _onKey(KeyEvent event) {
@@ -299,11 +367,9 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
     final den = _physH > 0 ? _physH : 20;
     PlatformBridge.instance.lockAspectRatio(num, den);
 
-    // Restore saved position/size, or set default
-    final saved = File(_rectFile);
-    if (await saved.exists()) {
-      await _restoreWindowRect();
-    } else {
+    // Restore saved position/size, or set default.
+    final restored = await _restoreWindowRect();
+    if (!restored) {
       final initW = 360;
       final initH = (initW * den / num).round() + 22;
       PlatformBridge.instance.setWindowSize(initW, initH);
@@ -381,6 +447,18 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
 
   Offset? _dragStart, _dragCurrent;
 
+  void _finishDrag(double ww, double wh) {
+    if (_dragStart == null) return;
+    final pos = _dragCurrent ?? _dragStart!;
+    PlatformBridge.instance.sendTouchUp(
+      widget.deviceId,
+      _toX(pos.dx, ww).toDouble(),
+      _toY(pos.dy, wh).toDouble(),
+    );
+    _dragStart = null;
+    _dragCurrent = null;
+  }
+
   void _executeCustomControl(String controlKey, double x, double y) {
     final state = context.read<AppState>();
     final cmd = state.customControls[controlKey] ?? 'default';
@@ -408,7 +486,7 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
           final cx = _toX(event.localPosition.dx, ww).toDouble();
           final cy = _toY(event.localPosition.dy, wh).toDouble();
           final dy = event.scrollDelta.dy;
-          if (dy.abs() > 1) {
+          if (dy.abs() > 0.5) {
             _handleScroll(cx, cy, dy);
           }
         }
@@ -441,25 +519,21 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
             _executeCustomControl('mouseLeft', x, y);
             return;
           }
+          _wheelMapper.release(physicalHeight: _physH);
           _dragStart = e.localPosition;
           _dragCurrent = e.localPosition;
           PlatformBridge.instance.sendTouchDown(widget.deviceId, x, y);
         }
       },
       onPointerMove: (e) {
-        if (_dragStart != null) {
+        if (_dragStart != null && (e.buttons & kPrimaryMouseButton) != 0) {
           _dragCurrent = e.localPosition;
           PlatformBridge.instance.sendTouchMove(widget.deviceId,
             _toX(e.localPosition.dx, ww).toDouble(), _toY(e.localPosition.dy, wh).toDouble());
         }
       },
-      onPointerUp: (e) {
-        if (_dragStart != null) {
-          PlatformBridge.instance.sendTouchUp(widget.deviceId,
-            _toX(e.localPosition.dx, ww).toDouble(), _toY(e.localPosition.dy, wh).toDouble());
-          _dragStart = null; _dragCurrent = null;
-        }
-      },
+      onPointerUp: (_) => _finishDrag(ww, wh),
+      onPointerCancel: (_) => _finishDrag(ww, wh),
       child: Texture(textureId: _textureId!),
     );
   }

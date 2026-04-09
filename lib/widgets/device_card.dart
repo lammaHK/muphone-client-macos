@@ -1,9 +1,9 @@
-import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../services/platform_bridge.dart';
+import '../services/wheel_gesture_mapper.dart';
 import '../theme/muphone_theme.dart';
 import 'nav_bar.dart';
 import 'shortcut_bar.dart';
@@ -28,10 +28,22 @@ class _DeviceCardState extends State<DeviceCard> {
   Offset? _dragStart;
   Offset? _dragCurrent;
   bool _isDragging = false;
-  Timer? _scrollTimer;
-  bool _scrollActive = false;
-  double _scrollAccumY = 0;
-  double _scrollCx = 0, _scrollCy = 0;
+  late WheelGestureMapper _wheelMapper;
+
+  @override
+  void initState() {
+    super.initState();
+    _wheelMapper = WheelGestureMapper(widget.device.deviceId);
+  }
+
+  @override
+  void didUpdateWidget(covariant DeviceCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.device.deviceId != widget.device.deviceId) {
+      _wheelMapper.dispose(physicalHeight: oldWidget.device.physicalHeight);
+      _wheelMapper = WheelGestureMapper(widget.device.deviceId);
+    }
+  }
 
   // Map widget coordinate to device physical coordinate
   int _toDevX(double wx, double widgetW) {
@@ -46,41 +58,28 @@ class _DeviceCardState extends State<DeviceCard> {
 
   @override
   void dispose() {
-    _scrollTimer?.cancel();
-    if (_scrollActive) {
-      PlatformBridge.instance.sendTouchUp(widget.device.deviceId, _scrollCx, _scrollCy);
-    }
+    _wheelMapper.dispose(physicalHeight: widget.device.physicalHeight);
     super.dispose();
   }
 
   void _handleScroll(double cx, double cy, double dy) {
-    final devId = widget.device.deviceId;
-    final phys = widget.device.physicalHeight > 0 ? widget.device.physicalHeight : 2400;
-    final step = phys * 0.04; // 4% of screen per tick
+    _wheelMapper.handle(
+      x: cx,
+      y: cy,
+      deltaY: dy,
+      physicalHeight: widget.device.physicalHeight,
+    );
+  }
 
-    if (!_scrollActive) {
-      _scrollCx = cx;
-      _scrollCy = cy;
-      _scrollAccumY = 0;
-      PlatformBridge.instance.sendTouchDown(devId, cx, cy);
-      _scrollActive = true;
-    }
-
-    // Accumulate scroll delta: dy>0 = scroll down = finger moves UP
-    _scrollAccumY += (dy > 0 ? -step : step);
-    final newY = (_scrollCy + _scrollAccumY).clamp(0.0, phys.toDouble());
-    PlatformBridge.instance.sendTouchMove(devId, _scrollCx, newY);
-
-    // Reset end-timer: release finger after 150ms of no scroll
-    _scrollTimer?.cancel();
-    _scrollTimer = Timer(const Duration(milliseconds: 150), () {
-      if (_scrollActive) {
-        final endY = (_scrollCy + _scrollAccumY).clamp(0.0, phys.toDouble());
-        PlatformBridge.instance.sendTouchUp(devId, _scrollCx, endY);
-        _scrollActive = false;
-        _scrollAccumY = 0;
-      }
-    });
+  void _finishDrag(double ww, double wh) {
+    if (_dragStart == null) return;
+    final pos = _dragCurrent ?? _dragStart!;
+    final x = _toDevX(pos.dx, ww).toDouble();
+    final y = _toDevY(pos.dy, wh).toDouble();
+    PlatformBridge.instance.sendTouchUp(widget.device.deviceId, x, y);
+    _dragStart = null;
+    _dragCurrent = null;
+    _isDragging = false;
   }
 
   void _sendTap(double wx, double wy, double widgetW, double widgetH) {
@@ -147,7 +146,7 @@ class _DeviceCardState extends State<DeviceCard> {
                     final cx = _toDevX(event.localPosition.dx, ww).toDouble();
                     final cy = _toDevY(event.localPosition.dy, wh).toDouble();
                     final dy = event.scrollDelta.dy;
-                    if (dy.abs() > 1) {
+                    if (dy.abs() > 0.5) {
                       _handleScroll(cx, cy, dy);
                     }
                   }
@@ -162,7 +161,8 @@ class _DeviceCardState extends State<DeviceCard> {
                     Future.delayed(const Duration(milliseconds: 80), () {
                       _sendTap(e.localPosition.dx, e.localPosition.dy, ww, wh);
                     });
-                  } else if (e.buttons == kPrimaryMouseButton) {
+                  } else if ((e.buttons & kPrimaryMouseButton) != 0) {
+                    _wheelMapper.release(physicalHeight: widget.device.physicalHeight);
                     _dragStart = e.localPosition;
                     _dragCurrent = e.localPosition;
                     _isDragging = false;
@@ -173,7 +173,7 @@ class _DeviceCardState extends State<DeviceCard> {
                   }
                 },
                 onPointerMove: (e) {
-                  if (_dragStart != null && e.buttons == kPrimaryMouseButton) {
+                  if (_dragStart != null && (e.buttons & kPrimaryMouseButton) != 0) {
                     _dragCurrent = e.localPosition;
                     _isDragging = true;
                     final x = _toDevX(e.localPosition.dx, ww).toDouble();
@@ -181,15 +181,8 @@ class _DeviceCardState extends State<DeviceCard> {
                     PlatformBridge.instance.sendTouchMove(widget.device.deviceId, x, y);
                   }
                 },
-                onPointerUp: (e) {
-                  if (_dragStart != null) {
-                    final pos = _dragCurrent ?? _dragStart!;
-                    final x = _toDevX(pos.dx, ww).toDouble();
-                    final y = _toDevY(pos.dy, wh).toDouble();
-                    PlatformBridge.instance.sendTouchUp(widget.device.deviceId, x, y);
-                    _dragStart = null; _dragCurrent = null; _isDragging = false;
-                  }
-                },
+                onPointerUp: (_) => _finishDrag(ww, wh),
+                onPointerCancel: (_) => _finishDrag(ww, wh),
                 child: Texture(textureId: widget.device.textureId!),
               ),
               if (!widget.device.hasFrames)

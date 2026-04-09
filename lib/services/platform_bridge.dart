@@ -204,6 +204,20 @@ class PlatformBridge {
     return null;
   }
 
+  Future<Map<String, int>?> getDisplayBounds() async {
+    try {
+      final r = await _methodChannel.invokeMethod('get_display_bounds');
+      if (r is Map) {
+        return Map<String, int>.from(
+          r.map((k, v) => MapEntry(k.toString(), (v as num).toInt())),
+        );
+      }
+    } on MissingPluginException {
+      // stub mode
+    }
+    return null;
+  }
+
   Future<void> setWindowRect(int x, int y, int width, int height) async {
     try {
       await _methodChannel.invokeMethod('set_window_rect', {

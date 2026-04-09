@@ -232,6 +232,15 @@ class MuphoneEngine {
                 "owner": json["owner"] ?? ""
             ])
 
+        case "clipboard_update":
+            emitEvent([
+                "event": "clipboard_update",
+                "device_id": json["device_id"] ?? -1,
+                "text": json["text"] ?? "",
+                "seq": json["seq"] ?? 0,
+                "updated_at_ms": json["updated_at_ms"] ?? 0
+            ])
+
         default:
             break
         }

@@ -166,6 +166,10 @@ class AppState extends ChangeNotifier {
   Map<String, String> _deviceQuality = {};  // serial → 'hd' or 'fhd'
   Map<String, String> _deviceAliases = {};  // serial → alias
   List<ShortcutAction> _shortcuts = List.of(ShortcutAction.defaults);
+  bool _rememberMainWindowPlacement = true;
+  bool _rememberDetachedWindowPlacement = true;
+  Map<String, int>? _mainWindowRect;
+  Map<String, Map<String, int>> _detachedWindowRects = {};
   Map<String, String> _customControls = {
     'mouseLeft': 'default',
     'mouseMiddle': 'default',
@@ -191,11 +195,58 @@ class AppState extends ChangeNotifier {
   String? get activeSerial => _activeSerial;
   Set<String> get hiddenSerials => Set.unmodifiable(_hiddenSerials);
   Map<String, String> get deviceQuality => Map.unmodifiable(_deviceQuality);
+  bool get rememberMainWindowPlacement => _rememberMainWindowPlacement;
+  bool get rememberDetachedWindowPlacement => _rememberDetachedWindowPlacement;
+  Map<String, int>? get mainWindowRect =>
+      _mainWindowRect == null ? null : Map<String, int>.from(_mainWindowRect!);
+  Map<String, Map<String, int>> get detachedWindowRects =>
+      Map.unmodifiable(_detachedWindowRects.map(
+        (k, v) => MapEntry(k, Map<String, int>.from(v)),
+      ));
 
   String getDeviceQuality(String serial) => _deviceQuality[serial] ?? 'hd';
   Map<String, String> get deviceAliases => Map.unmodifiable(_deviceAliases);
   List<ShortcutAction> get shortcuts => List.unmodifiable(_shortcuts);
   Map<String, String> get customControls => Map.unmodifiable(_customControls);
+
+  void setRememberMainWindowPlacement(bool enabled) {
+    if (_rememberMainWindowPlacement == enabled) return;
+    _rememberMainWindowPlacement = enabled;
+    notifyListeners();
+  }
+
+  void setRememberDetachedWindowPlacement(bool enabled) {
+    if (_rememberDetachedWindowPlacement == enabled) return;
+    _rememberDetachedWindowPlacement = enabled;
+    notifyListeners();
+  }
+
+  void setMainWindowRect(Map<String, int>? rect, {bool notify = true}) {
+    _mainWindowRect = rect == null ? null : Map<String, int>.from(rect);
+    if (notify) notifyListeners();
+  }
+
+  Map<String, int>? getDetachedWindowRect(int deviceId) {
+    final rect = _detachedWindowRects[deviceId.toString()];
+    return rect == null ? null : Map<String, int>.from(rect);
+  }
+
+  void setDetachedWindowRect(int deviceId, Map<String, int> rect, {bool notify = true}) {
+    _detachedWindowRects[deviceId.toString()] = Map<String, int>.from(rect);
+    if (notify) notifyListeners();
+  }
+
+  void removeDetachedWindowRect(int deviceId, {bool notify = true}) {
+    _detachedWindowRects.remove(deviceId.toString());
+    if (notify) notifyListeners();
+  }
+
+  void setDetachedWindowRects(Map<String, Map<String, int>> rects, {bool notify = true}) {
+    _detachedWindowRects = rects.map(
+      (k, v) => MapEntry(k, Map<String, int>.from(v)),
+    );
+    if (notify) notifyListeners();
+  }
 
   void setCustomControls(Map<String, String> map) {
     _customControls = Map.from(map);

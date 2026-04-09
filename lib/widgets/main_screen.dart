@@ -38,6 +38,8 @@ class _MainScreenState extends State<MainScreen> {
 
   Timer? _clipboardTimer;
   String _lastClipboard = '';
+  int _lastClipboardSeq = 0;
+  int _lastClipboardUpdatedAt = 0;
 
   @override
   void initState() {
@@ -70,6 +72,12 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
+    final state = context.read<AppState>();
+    unawaited(
+      _captureMainWindowPlacement(state, PlatformBridge.instance).then(
+        (_) => _saveStateNow(state),
+      ),
+    );
     _clipboardTimer?.cancel();
     HardwareKeyboard.instance.removeHandler(_onHardwareKey);
     _eventSub?.cancel();
@@ -112,28 +120,145 @@ class _MainScreenState extends State<MainScreen> {
     if (data.containsKey('settingsShortcutKey')) {
       state.setSettingsShortcutKey(data['settingsShortcutKey'] as String? ?? '=');
     }
+    if (data.containsKey('rememberMainWindowPlacement')) {
+      state.setRememberMainWindowPlacement(
+        data['rememberMainWindowPlacement'] as bool? ?? true,
+      );
+    }
+    if (data.containsKey('rememberDetachedWindowPlacement')) {
+      state.setRememberDetachedWindowPlacement(
+        data['rememberDetachedWindowPlacement'] as bool? ?? true,
+      );
+    }
+    if (data.containsKey('mainWindowRect')) {
+      final raw = data['mainWindowRect'] as Map<String, dynamic>?;
+      if (raw != null) {
+        state.setMainWindowRect({
+          'x': (raw['x'] as num?)?.toInt() ?? 0,
+          'y': (raw['y'] as num?)?.toInt() ?? 0,
+          'width': (raw['width'] as num?)?.toInt() ?? 0,
+          'height': (raw['height'] as num?)?.toInt() ?? 0,
+        });
+      }
+    }
+    if (data.containsKey('detachedWindowRects')) {
+      final raw = data['detachedWindowRects'] as Map<String, dynamic>? ?? {};
+      final parsed = <String, Map<String, int>>{};
+      for (final entry in raw.entries) {
+        final rect = entry.value;
+        if (rect is! Map) continue;
+        parsed[entry.key] = {
+          'x': (rect['x'] as num?)?.toInt() ?? 0,
+          'y': (rect['y'] as num?)?.toInt() ?? 0,
+          'width': (rect['width'] as num?)?.toInt() ?? 0,
+          'height': (rect['height'] as num?)?.toInt() ?? 0,
+        };
+      }
+      state.setDetachedWindowRects(parsed);
+    }
     if (data.containsKey('customControls')) {
       final raw = data['customControls'] as Map<String, dynamic>? ?? {};
       state.setCustomControls(raw.map((k, v) => MapEntry(k, v.toString())));
     }
   }
 
+  Map<String, dynamic> _buildPersistedState(AppState state) {
+    final gc = state.gridConfig;
+    return {
+      'gridConfig': {'columns': gc.columns, 'rows': gc.rows},
+      'deviceOrder': state.deviceOrder,
+      'serverHost': state.serverHost,
+      'hiddenSerials': state.hiddenSerials.toList(),
+      'deviceQuality': state.deviceQuality,
+      'deviceAliases': state.deviceAliases,
+      'shortcuts': state.shortcuts.map((s) => s.toJson()).toList(),
+      'settingsShortcutKey': state.settingsShortcutKey,
+      'rememberMainWindowPlacement': state.rememberMainWindowPlacement,
+      'rememberDetachedWindowPlacement': state.rememberDetachedWindowPlacement,
+      'mainWindowRect': state.mainWindowRect,
+      'detachedWindowRects': state.detachedWindowRects,
+      'customControls': state.customControls,
+    };
+  }
+
+  Future<void> _saveStateNow(AppState state) {
+    return Persistence.instance.save(_buildPersistedState(state));
+  }
+
   void _debouncedSave(AppState state) {
     _saveTimer?.cancel();
     _saveTimer = Timer(const Duration(seconds: 2), () {
-      final gc = state.gridConfig;
-      Persistence.instance.save({
-        'gridConfig': {'columns': gc.columns, 'rows': gc.rows},
-        'deviceOrder': state.deviceOrder,
-        'serverHost': state.serverHost,
-        'hiddenSerials': state.hiddenSerials.toList(),
-        'deviceQuality': state.deviceQuality,
-        'deviceAliases': state.deviceAliases,
-        'shortcuts': state.shortcuts.map((s) => s.toJson()).toList(),
-        'settingsShortcutKey': state.settingsShortcutKey,
-        'customControls': state.customControls,
-      });
+      Persistence.instance.save(_buildPersistedState(state));
     });
+  }
+
+  Map<String, int>? _normalizeWindowRect(
+    Map<String, int>? rect,
+    Map<String, int>? bounds,
+  ) {
+    if (rect == null) return null;
+    var x = rect['x'] ?? 0;
+    var y = rect['y'] ?? 0;
+    var width = rect['width'] ?? 0;
+    var height = rect['height'] ?? 0;
+    if (width <= 0 || height <= 0) return null;
+
+    if (bounds == null) return {'x': x, 'y': y, 'width': width, 'height': height};
+
+    final bx = bounds['x'] ?? 0;
+    final by = bounds['y'] ?? 0;
+    final bw = bounds['width'] ?? 0;
+    final bh = bounds['height'] ?? 0;
+    if (bw <= 0 || bh <= 0) return {'x': x, 'y': y, 'width': width, 'height': height};
+
+    const minW = 360;
+    const minH = 240;
+    width = width.clamp(minW, bw);
+    height = height.clamp(minH, bh);
+
+    final maxX = bx + bw - width;
+    final maxY = by + bh - height;
+    x = maxX >= bx ? x.clamp(bx, maxX) : bx;
+    y = maxY >= by ? y.clamp(by, maxY) : by;
+    return {'x': x, 'y': y, 'width': width, 'height': height};
+  }
+
+  Future<void> _restoreMainWindowPlacement(AppState state, PlatformBridge bridge) async {
+    final bounds = await bridge.getDisplayBounds();
+    if (!state.rememberMainWindowPlacement) {
+      final current = await bridge.getWindowRect();
+      if (current != null && bounds != null) {
+        final width = ((current['width'] ?? 1280).clamp(360, bounds['width'] ?? 1280) as num).toInt();
+        final height = ((current['height'] ?? 720).clamp(240, bounds['height'] ?? 720) as num).toInt();
+        final x = (bounds['x'] ?? 0) + (((bounds['width'] ?? width) - width) ~/ 2);
+        final y = (bounds['y'] ?? 0) + (((bounds['height'] ?? height) - height) ~/ 2);
+        await bridge.setWindowRect(x, y, width, height);
+      }
+      return;
+    }
+    final rect = state.mainWindowRect;
+    if (rect == null) return;
+    final normalized = _normalizeWindowRect(rect, bounds);
+    if (normalized == null) return;
+    await bridge.setWindowRect(
+      normalized['x']!,
+      normalized['y']!,
+      normalized['width']!,
+      normalized['height']!,
+    );
+  }
+
+  Future<void> _captureMainWindowPlacement(AppState state, PlatformBridge bridge) async {
+    if (!state.rememberMainWindowPlacement) {
+      state.setMainWindowRect(null, notify: false);
+      return;
+    }
+    final rect = await bridge.getWindowRect();
+    if (rect == null) return;
+    final bounds = await bridge.getDisplayBounds();
+    final normalized = _normalizeWindowRect(rect, bounds);
+    if (normalized == null) return;
+    state.setMainWindowRect(normalized, notify: false);
   }
 
   int? _getActiveDeviceId() {
@@ -205,6 +330,40 @@ class _MainScreenState extends State<MainScreen> {
     PlatformBridge.instance.sendText(deviceId, text);
   }
 
+  Future<void> _applyClipboardUpdate(Map<String, dynamic> event) async {
+    final text = event['text'] as String?;
+    if (text == null || text.isEmpty) return;
+
+    final deviceId = event['device_id'] as int? ?? -1;
+    final seq = (event['seq'] as num?)?.toInt() ?? 0;
+    final updatedAt = (event['updated_at_ms'] as num?)?.toInt() ?? 0;
+
+    bool isNewer = true;
+    if (seq > 0 && _lastClipboardSeq > 0) {
+      isNewer = seq > _lastClipboardSeq;
+    } else if (seq > 0 && _lastClipboardSeq == 0) {
+      isNewer = true;
+    } else if (updatedAt > 0 && _lastClipboardUpdatedAt > 0) {
+      isNewer = updatedAt > _lastClipboardUpdatedAt;
+    }
+    if (!isNewer) {
+      debugPrint('[clipboard] Ignore stale update seq=$seq from dev=$deviceId');
+      return;
+    }
+
+    try {
+      await Clipboard.setData(ClipboardData(text: text));
+      _lastClipboard = text; // avoid echo loop in periodic clipboard sync
+      if (seq > 0) _lastClipboardSeq = seq;
+      if (updatedAt > 0) _lastClipboardUpdatedAt = updatedAt;
+      debugPrint(
+        '[clipboard] Phone→PC applied dev=$deviceId seq=$seq len=${text.length}',
+      );
+    } catch (e) {
+      debugPrint('[clipboard] Failed to write system clipboard: $e');
+    }
+  }
+
   Future<void> _initNativeAndConnect() async {
     final state = context.read<AppState>();
     final bridge = PlatformBridge.instance;
@@ -220,6 +379,7 @@ class _MainScreenState extends State<MainScreen> {
 
     final info = await bridge.init();
     await bridge.setMainWindow();
+    await _restoreMainWindowPlacement(state, bridge);
     int vramMb = 0;
     if (info != null) {
       vramMb = (info['vram_mb'] as int?) ?? 0;
@@ -318,12 +478,7 @@ class _MainScreenState extends State<MainScreen> {
         debugPrint('[control] dev=${event['device_id']} mode=${event['mode']} controller=${event['controller']}');
 
       case 'clipboard_update':
-        final text = event['text'] as String?;
-        if (text != null && text.isNotEmpty) {
-          _lastClipboard = text;
-          Clipboard.setData(ClipboardData(text: text));
-          debugPrint('[clipboard] Phone→PC: ${text.length} chars');
-        }
+        unawaited(_applyClipboardUpdate(event));
 
       case 'close_requested':
         _showCloseConfirmation();
@@ -366,8 +521,11 @@ class _MainScreenState extends State<MainScreen> {
             child: Text('取消', style: TextStyle(fontSize: 12, color: MUPhoneColors.textSecondary)),
           ),
           ElevatedButton.icon(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(ctx);
+              final state = context.read<AppState>();
+              await _captureMainWindowPlacement(state, PlatformBridge.instance);
+              await _saveStateNow(state);
               PlatformBridge.instance.confirmExit();
             },
             icon: const Icon(Icons.power_settings_new, size: 14),
@@ -469,6 +627,18 @@ class _MainScreenState extends State<MainScreen> {
         bridge.unsubscribeDevice(id);
         state.removeDevice(id);
       }
+    }
+
+    final validKeys = newIds.map((e) => e.toString()).toSet();
+    final existingRects = state.detachedWindowRects;
+    final filteredRects = <String, Map<String, int>>{};
+    for (final entry in existingRects.entries) {
+      if (validKeys.contains(entry.key)) {
+        filteredRects[entry.key] = entry.value;
+      }
+    }
+    if (filteredRects.length != existingRects.length) {
+      state.setDetachedWindowRects(filteredRects);
     }
 
     // Quality sync: delay FHD upgrades until 5s after this device_list
