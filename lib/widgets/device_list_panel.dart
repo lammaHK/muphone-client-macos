@@ -142,8 +142,8 @@ class _DeviceRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              _StatusDot(phase: device.phase, lockOwner: device.lockOwner),
-              const SizedBox(width: 8),
+              _QualityBadge(label: _buildQualityLine()),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   device.displayName,
@@ -155,47 +155,48 @@ class _DeviceRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              const SizedBox(width: 8),
+              _PhaseBadge(phase: device.phase, lockOwner: device.lockOwner),
             ],
           ),
           const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.only(left: 16),
-            child: Text(
-              _buildStatusLine(),
-              style: const TextStyle(
-                fontSize: 11,
-                color: MUPhoneColors.textSecondary,
-              ),
+          Text(
+            _buildStatusLine(),
+            style: const TextStyle(
+              fontSize: 11,
+              color: MUPhoneColors.textSecondary,
             ),
           ),
           const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.only(left: 16),
-            child: Row(
-              children: [
-                _ActionButton(
-                  label: 'Focus',
-                  onPressed: onFocus,
-                ),
-                const SizedBox(width: 8),
-                _ActionButton(
-                  label: device.isDetached ? 'Attach' : 'Detach',
-                  onPressed: onDetachToggle,
-                ),
-              ],
-            ),
+          Row(
+            children: [
+              _ActionButton(
+                label: 'Focus',
+                onPressed: onFocus,
+              ),
+              const SizedBox(width: 8),
+              _ActionButton(
+                label: device.isDetached ? 'Attach' : 'Detach',
+                onPressed: onDetachToggle,
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
+  String _buildQualityLine() {
+    final quality = (device.height >= 1080 || device.width >= 1080) ? 'FHD' : 'HD';
+    if (device.fps > 0) {
+      return '$quality ${device.fps}fps';
+    }
+    return quality;
+  }
+
   String _buildStatusLine() {
     final parts = <String>[];
     parts.add(device.phase.name.capitalize());
-    if (device.phase == DevicePhase.online || device.phase == DevicePhase.locked) {
-      parts.add('${device.fps}fps');
-    }
     if (device.lockOwner != null) {
       parts.add('Locked(${device.lockOwner})');
     }
@@ -206,8 +207,8 @@ class _DeviceRow extends StatelessWidget {
   }
 }
 
-class _StatusDot extends StatelessWidget {
-  const _StatusDot({required this.phase, this.lockOwner});
+class _PhaseBadge extends StatelessWidget {
+  const _PhaseBadge({required this.phase, this.lockOwner});
   final DevicePhase phase;
   final String? lockOwner;
 
@@ -222,12 +223,59 @@ class _StatusDot extends StatelessWidget {
       DevicePhase.offline || DevicePhase.starting => MUPhoneColors.statusOffline,
     };
 
+    final text = switch (phase) {
+      DevicePhase.online => '在線',
+      DevicePhase.locked => '鎖定',
+      DevicePhase.failed => '失敗',
+      DevicePhase.offline => '離線',
+      DevicePhase.starting => '啟動中',
+    };
+
     return Container(
-      width: 8,
-      height: 8,
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: TextStyle(fontSize: 10, color: color),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QualityBadge extends StatelessWidget {
+  const _QualityBadge({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: MUPhoneColors.hover,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: MUPhoneColors.border, width: 0.5),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 10,
+          color: MUPhoneColors.textSecondary,
+          fontWeight: FontWeight.w500,
+        ),
       ),
     );
   }

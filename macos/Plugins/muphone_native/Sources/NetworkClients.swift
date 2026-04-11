@@ -66,8 +66,8 @@ class ControlClient {
         guard let output = outputStream,
               let jsonData = try? JSONSerialization.data(withJSONObject: msg) else { return }
 
-        // Length-prefixed frame: 4 bytes big-endian length + JSON bytes
-        var length = UInt32(jsonData.count).bigEndian
+        // Length-prefixed frame: 4 bytes little-endian length + JSON bytes
+        var length = UInt32(jsonData.count).littleEndian
         let lengthData = Data(bytes: &length, count: 4)
 
         output.write([UInt8](lengthData), maxLength: 4)
@@ -83,7 +83,7 @@ class ControlClient {
             let headerRead = readExact(input, buffer: &lengthBuf, count: 4)
             if headerRead != 4 { break }
 
-            let length = Int(UInt32(bigEndian: Data(lengthBuf).withUnsafeBytes { $0.load(as: UInt32.self) }))
+            let length = Int(UInt32(littleEndian: Data(lengthBuf).withUnsafeBytes { $0.load(as: UInt32.self) }))
             if length <= 0 || length > 1_000_000 { continue }
 
             // Read JSON body
@@ -202,8 +202,8 @@ class VideoReceiver {
         self.inputStream = input
         self.outputStream = output
 
-        // Send subscription header: 4 bytes device_id (big-endian)
-        var devId = UInt32(deviceId).bigEndian
+        // Send subscription header: 4 bytes device_id (little-endian)
+        var devId = UInt32(deviceId).littleEndian
         let devData = Data(bytes: &devId, count: 4)
         output.write([UInt8](devData), maxLength: 4)
 
@@ -227,8 +227,8 @@ class VideoReceiver {
             let n = readExact(input, buffer: &header, count: 8)
             if n != 8 { break }
 
-            let length = Int(UInt32(bigEndian: Data(header[0..<4]).withUnsafeBytes { $0.load(as: UInt32.self) }))
-            let flags = UInt16(bigEndian: Data(header[4..<6]).withUnsafeBytes { $0.load(as: UInt16.self) })
+            let length = Int(UInt32(littleEndian: Data(header[0..<4]).withUnsafeBytes { $0.load(as: UInt32.self) }))
+            let flags = UInt16(littleEndian: Data(header[4..<6]).withUnsafeBytes { $0.load(as: UInt16.self) })
 
             if length <= 0 || length > 10_000_000 { continue }
 

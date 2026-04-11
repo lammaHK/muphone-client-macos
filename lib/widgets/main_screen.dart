@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
+import '../models/adb_command_preset.dart';
 import '../services/persistence.dart';
 import '../services/platform_bridge.dart';
 import '../theme/muphone_theme.dart';
@@ -35,6 +36,9 @@ class _MainScreenState extends State<MainScreen> {
   final Set<int> _subscribingNow = {};
   int _activeSubCount = 0;
   static const int _maxConcurrentSubs = 4;
+  final Map<int, int> _streamRetryCount = {};
+  int _lastReconnectAtMs = 0;
+  int _lastDeviceErrorAtMs = 0;
 
   Timer? _clipboardTimer;
   String _lastClipboard = '';
@@ -117,6 +121,29 @@ class _MainScreenState extends State<MainScreen> {
       final raw = data['shortcuts'] as List<dynamic>? ?? [];
       state.setShortcuts(raw.map((e) => ShortcutAction.fromJson(Map<String, dynamic>.from(e as Map))).toList());
     }
+    if (data.containsKey('adbCommandPresets')) {
+      final raw = data['adbCommandPresets'] as List<dynamic>? ?? [];
+      state.setAdbCommandPresets(
+        raw
+            .map((e) => AdbCommandPreset.fromJson(
+                  Map<String, dynamic>.from(e as Map),
+                ))
+            .toList(),
+      );
+    }
+    if (data.containsKey('customControlActions')) {
+      final raw = data['customControlActions'] as List<dynamic>? ?? [];
+      state.setCustomControlActions(
+        raw
+            .map((e) => CustomControlAction.fromJson(
+                  Map<String, dynamic>.from(e as Map),
+                ))
+            .toList(),
+      );
+    } else if (data.containsKey('customControls')) {
+      final raw = data['customControls'] as Map<String, dynamic>? ?? {};
+      state.setCustomControls(raw.map((k, v) => MapEntry(k, v.toString())));
+    }
     if (data.containsKey('settingsShortcutKey')) {
       state.setSettingsShortcutKey(data['settingsShortcutKey'] as String? ?? '=');
     }
@@ -156,10 +183,6 @@ class _MainScreenState extends State<MainScreen> {
       }
       state.setDetachedWindowRects(parsed);
     }
-    if (data.containsKey('customControls')) {
-      final raw = data['customControls'] as Map<String, dynamic>? ?? {};
-      state.setCustomControls(raw.map((k, v) => MapEntry(k, v.toString())));
-    }
   }
 
   Map<String, dynamic> _buildPersistedState(AppState state) {
@@ -172,6 +195,10 @@ class _MainScreenState extends State<MainScreen> {
       'deviceQuality': state.deviceQuality,
       'deviceAliases': state.deviceAliases,
       'shortcuts': state.shortcuts.map((s) => s.toJson()).toList(),
+      'adbCommandPresets':
+          state.adbCommandPresets.map((p) => p.toJson()).toList(),
+      'customControlActions':
+          state.customControlActions.map((item) => item.toJson()).toList(),
       'settingsShortcutKey': state.settingsShortcutKey,
       'rememberMainWindowPlacement': state.rememberMainWindowPlacement,
       'rememberDetachedWindowPlacement': state.rememberDetachedWindowPlacement,
@@ -181,14 +208,48 @@ class _MainScreenState extends State<MainScreen> {
     };
   }
 
-  Future<void> _saveStateNow(AppState state) {
-    return Persistence.instance.save(_buildPersistedState(state));
+  Map<String, Map<String, int>> _parseDetachedRects(dynamic raw) {
+    final parsed = <String, Map<String, int>>{};
+    if (raw is! Map) return parsed;
+    for (final entry in raw.entries) {
+      final key = entry.key.toString();
+      final rect = entry.value;
+      if (rect is! Map) continue;
+      parsed[key] = {
+        'x': (rect['x'] as num?)?.toInt() ?? 0,
+        'y': (rect['y'] as num?)?.toInt() ?? 0,
+        'width': (rect['width'] as num?)?.toInt() ?? 0,
+        'height': (rect['height'] as num?)?.toInt() ?? 0,
+      };
+    }
+    return parsed;
+  }
+
+  Future<void> _saveStateNow(AppState state) async {
+    final payload = _buildPersistedState(state);
+    if (state.rememberDetachedWindowPlacement) {
+      final existing = await Persistence.instance.load();
+      final diskRects = _parseDetachedRects(existing['detachedWindowRects']);
+      final memoryRects = state.detachedWindowRects;
+      final merged = <String, Map<String, int>>{
+        ...diskRects.map((k, v) => MapEntry(k, Map<String, int>.from(v))),
+      };
+      for (final entry in memoryRects.entries) {
+        merged.putIfAbsent(entry.key, () => Map<String, int>.from(entry.value));
+      }
+      payload['detachedWindowRects'] = merged;
+      state.setDetachedWindowRects(merged, notify: false);
+    } else {
+      payload['detachedWindowRects'] = <String, Map<String, int>>{};
+      state.setDetachedWindowRects({}, notify: false);
+    }
+    await Persistence.instance.save(payload);
   }
 
   void _debouncedSave(AppState state) {
     _saveTimer?.cancel();
     _saveTimer = Timer(const Duration(seconds: 2), () {
-      Persistence.instance.save(_buildPersistedState(state));
+      unawaited(_saveStateNow(state));
     });
   }
 
@@ -416,6 +477,7 @@ class _MainScreenState extends State<MainScreen> {
 
     switch (type) {
       case 'server_connection_state':
+        final prevConn = state.connection;
         final s = event['state'] as String? ?? '';
         final newConn = switch (s) {
           'connected'    => ServerConnectionState.connected,
@@ -424,6 +486,12 @@ class _MainScreenState extends State<MainScreen> {
           _              => ServerConnectionState.disconnected,
         };
         state.setConnection(newConn);
+        if (prevConn != ServerConnectionState.connected &&
+            newConn == ServerConnectionState.connected) {
+          _lastClipboard = '';
+          _lastClipboardSeq = 0;
+          _lastClipboardUpdatedAt = 0;
+        }
         if (newConn == ServerConnectionState.connected) {
           _fhdProfileSent.clear();
           _subQueue.clear();
@@ -476,6 +544,9 @@ class _MainScreenState extends State<MainScreen> {
       case 'control_status':
         // Multi-client control status update (for future UI)
         debugPrint('[control] dev=${event['device_id']} mode=${event['mode']} controller=${event['controller']}');
+
+      case 'device_list_error':
+        unawaited(_handleDeviceListError(event, state));
 
       case 'clipboard_update':
         unawaited(_applyClipboardUpdate(event));
@@ -548,18 +619,19 @@ class _MainScreenState extends State<MainScreen> {
     if (devices is! List) return;
 
     final bridge = PlatformBridge.instance;
-    final currentIds = state.devices.map((d) => d.deviceId).toSet();
-    final newIds = <int>{};
+    final seenSerials = <String>{};
 
     for (final raw in devices) {
       if (raw is! Map) continue;
       final d = Map<String, dynamic>.from(raw);
       final id = d['device_id'] as int? ?? -1;
       if (id < 0) continue;
-      newIds.add(id);
 
       final phase = _parsePhase(d['phase'] as String? ?? 'offline');
       final serial = d['serial'] as String? ?? '';
+      if (serial.isNotEmpty) {
+        seenSerials.add(serial);
+      }
       final width = d['width'] as int? ?? 405;
       final height = d['height'] as int? ?? 720;
       final physW = d['physical_width'] as int? ?? 0;
@@ -622,23 +694,25 @@ class _MainScreenState extends State<MainScreen> {
       }
     }
 
-    for (final id in currentIds) {
-      if (!newIds.contains(id)) {
-        bridge.unsubscribeDevice(id);
-        state.removeDevice(id);
+    for (final device in List<DeviceState>.from(state.devices)) {
+      if (seenSerials.contains(device.serial)) continue;
+      if (device.textureId != null) {
+        bridge.unsubscribeDevice(device.deviceId);
       }
-    }
-
-    final validKeys = newIds.map((e) => e.toString()).toSet();
-    final existingRects = state.detachedWindowRects;
-    final filteredRects = <String, Map<String, int>>{};
-    for (final entry in existingRects.entries) {
-      if (validKeys.contains(entry.key)) {
-        filteredRects[entry.key] = entry.value;
+      state.updateDevice(
+        device.deviceId,
+        (d) => d.copyWith(
+          phase: DevicePhase.offline,
+          textureId: null,
+          hasFrames: false,
+          isQualitySwitching: false,
+        ),
+      );
+      _subscribingNow.remove(device.deviceId);
+      _subQueue.removeWhere((q) => q.deviceId == device.deviceId);
+      if (_fhdProfileSent.contains(device.deviceId)) {
+        _fhdProfileSent.remove(device.deviceId);
       }
-    }
-    if (filteredRects.length != existingRects.length) {
-      state.setDetachedWindowRects(filteredRects);
     }
 
     // Quality sync: delay FHD upgrades until 5s after this device_list
@@ -676,6 +750,7 @@ class _MainScreenState extends State<MainScreen> {
 
   void _onDeviceFrameReady(PlatformBridge bridge, AppState state, int deviceId) {
     _subscribingNow.remove(deviceId);
+    _streamRetryCount[deviceId] = 0;
     _drainSubQueue(bridge, state);
   }
 
@@ -700,10 +775,63 @@ class _MainScreenState extends State<MainScreen> {
     Future.delayed(const Duration(seconds: 8), () {
       if (_subscribeGen[id] != gen) return;
       if (_subscribingNow.contains(id)) {
+        final dev = state.getDevice(id);
+        final online = dev?.phase == DevicePhase.online || dev?.phase == DevicePhase.locked;
+        final hadFrame = dev?.hasFrames == true;
+        if (online && !hadFrame) {
+          final retry = (_streamRetryCount[id] ?? 0) + 1;
+          _streamRetryCount[id] = retry;
+          if (retry <= 2) {
+            debugPrint('[sub-queue] dev=$id no frame timeout — retry stream #$retry');
+            bridge.unsubscribeDevice(id);
+            state.updateDevice(id, (d) => d.copyWith(textureId: null, hasFrames: false));
+            _releaseSubSlot(id, bridge, state);
+            _enqueueSubscribe(bridge, state, id, subW, subH);
+            return;
+          }
+          _streamRetryCount[id] = 0;
+          debugPrint('[sub-queue] dev=$id no frame after retries — full reconnect');
+          _releaseSubSlot(id, bridge, state);
+          unawaited(_triggerFullReconnect(state, '裝置 $id 長時間無畫面'));
+          return;
+        }
         debugPrint('[sub-queue] dev=$id 8s timeout — releasing slot');
         _releaseSubSlot(id, bridge, state);
       }
     });
+  }
+
+  Future<void> _handleDeviceListError(
+    Map<String, dynamic> event,
+    AppState state,
+  ) async {
+    final message = (event['message'] as String?)?.trim();
+    if (message == null || message.isEmpty) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastDeviceErrorAtMs < 2500) return;
+    _lastDeviceErrorAtMs = now;
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    }
+    if (state.connection == ServerConnectionState.connected) return;
+    await PlatformBridge.instance.connect(state.serverHost);
+  }
+
+  Future<void> _triggerFullReconnect(AppState state, String reason) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastReconnectAtMs < 8000) return;
+    _lastReconnectAtMs = now;
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$reason，正在嘗試重連...')),
+      );
+    }
+    final bridge = PlatformBridge.instance;
+    await bridge.disconnect();
+    await Future.delayed(const Duration(milliseconds: 300));
+    await bridge.connect(state.serverHost);
   }
 
   void _resubscribeAfterQualitySwitch(PlatformBridge bridge, AppState state, int id) {

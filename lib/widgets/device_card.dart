@@ -63,12 +63,20 @@ class _DeviceCardState extends State<DeviceCard> {
   }
 
   void _handleScroll(double cx, double cy, double dy) {
-    _wheelMapper.handle(
-      x: cx,
-      y: cy,
-      deltaY: dy,
-      physicalHeight: widget.device.physicalHeight,
+    final handled = _executeTriggerActions(
+      'mouse_wheel',
+      cx,
+      cy,
+      scrollDelta: dy,
     );
+    if (!handled) {
+      _wheelMapper.handle(
+        x: cx,
+        y: cy,
+        deltaY: dy,
+        physicalHeight: widget.device.physicalHeight,
+      );
+    }
   }
 
   void _finishDrag(double ww, double wh) {
@@ -97,6 +105,91 @@ class _DeviceCardState extends State<DeviceCard> {
       _toDevY(to.dy, widgetH).toDouble(),
       durationMs,
     );
+  }
+
+  bool _executeTriggerActions(
+    String trigger,
+    double x,
+    double y, {
+    double? scrollDelta,
+  }) {
+    final actions = context
+        .read<AppState>()
+        .resolveControlActionsByTrigger(trigger);
+    if (actions.isEmpty) return false;
+    for (final action in actions) {
+      final cmd = action.command.trim();
+      if (cmd == CustomControlAction.cmdTouchDrag) continue;
+      _executeControlCommand(
+        cmd,
+        x: x,
+        y: y,
+        scrollDelta: scrollDelta,
+      );
+    }
+    return true;
+  }
+
+  bool _hasTouchDragBinding() {
+    final actions = context
+        .read<AppState>()
+        .resolveControlActionsByTrigger('mouse_left');
+    if (actions.isEmpty) return true;
+    return actions.any(
+      (action) => action.command.trim() == CustomControlAction.cmdTouchDrag,
+    );
+  }
+
+  void _executeControlCommand(
+    String command, {
+    required double x,
+    required double y,
+    double? scrollDelta,
+  }) {
+    final cmd = command.trim();
+    final lower = cmd.toLowerCase();
+    if (lower == CustomControlAction.cmdTapHere) {
+      PlatformBridge.instance.sendTap(widget.device.deviceId, x, y);
+      return;
+    }
+    if (lower == CustomControlAction.cmdDoubleTapHere) {
+      PlatformBridge.instance.sendTap(widget.device.deviceId, x, y);
+      Future.delayed(const Duration(milliseconds: 80), () {
+        PlatformBridge.instance.sendTap(widget.device.deviceId, x, y);
+      });
+      return;
+    }
+    if (lower == CustomControlAction.cmdScrollNative) {
+      final delta = scrollDelta ?? 0;
+      if (delta.abs() > 0.1) {
+        PlatformBridge.instance.sendScroll(widget.device.deviceId, x, y, delta);
+      }
+      return;
+    }
+    if (lower.startsWith('key:')) {
+      final keyCode = int.tryParse(lower.substring(4));
+      if (keyCode != null && keyCode > 0) {
+        PlatformBridge.instance.sendKey(widget.device.deviceId, keyCode);
+      }
+      return;
+    }
+    if (lower.startsWith('adb:')) {
+      final adbCommand = cmd.substring(4).trim();
+      if (adbCommand.isEmpty) return;
+      PlatformBridge.instance.sendInput({
+        'type': 'run_action',
+        'device_id': widget.device.deviceId,
+        'action_type': ShortcutAction.adbCommand,
+        'command': adbCommand,
+      });
+      return;
+    }
+    PlatformBridge.instance.sendInput({
+      'type': 'run_action',
+      'device_id': widget.device.deviceId,
+      'action_type': ShortcutAction.adbCommand,
+      'command': cmd,
+    });
   }
 
   @override
@@ -154,21 +247,25 @@ class _DeviceCardState extends State<DeviceCard> {
                 onPointerDown: (e) {
                   debugPrint('[DeviceCard] onPointerDown buttons=${e.buttons} dev=${widget.device.deviceId}');
                   context.read<AppState>().setActiveSerial(widget.device.serial);
+                  final x = _toDevX(e.localPosition.dx, ww).toDouble();
+                  final y = _toDevY(e.localPosition.dy, wh).toDouble();
                   if (e.buttons == kSecondaryMouseButton) {
+                    if (_executeTriggerActions('mouse_right', x, y)) return;
                     PlatformBridge.instance.sendKey(widget.device.deviceId, 4);
                   } else if (e.buttons == kMiddleMouseButton) {
-                    _sendTap(e.localPosition.dx, e.localPosition.dy, ww, wh);
+                    if (_executeTriggerActions('mouse_middle', x, y)) return;
+                    PlatformBridge.instance.sendTap(widget.device.deviceId, x, y);
                     Future.delayed(const Duration(milliseconds: 80), () {
-                      _sendTap(e.localPosition.dx, e.localPosition.dy, ww, wh);
+                      PlatformBridge.instance.sendTap(widget.device.deviceId, x, y);
                     });
                   } else if ((e.buttons & kPrimaryMouseButton) != 0) {
+                    _executeTriggerActions('mouse_left', x, y);
+                    if (!_hasTouchDragBinding()) return;
                     _wheelMapper.release(physicalHeight: widget.device.physicalHeight);
                     _dragStart = e.localPosition;
                     _dragCurrent = e.localPosition;
                     _isDragging = false;
                     // Send touch down immediately
-                    final x = _toDevX(e.localPosition.dx, ww).toDouble();
-                    final y = _toDevY(e.localPosition.dy, wh).toDouble();
                     PlatformBridge.instance.sendTouchDown(widget.device.deviceId, x, y);
                   }
                 },

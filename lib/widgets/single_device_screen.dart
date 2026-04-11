@@ -33,6 +33,8 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
   late final WheelGestureMapper _wheelMapper;
   bool _rememberDetachedWindowPlacement = true;
   Map<String, Map<String, int>> _detachedWindowRects = {};
+  Timer? _windowRectSaveTimer;
+  Map<String, int>? _lastSavedRect;
 
   @override
   void initState() {
@@ -43,19 +45,26 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
 
   @override
   void dispose() {
+    _windowRectSaveTimer?.cancel();
     _wheelMapper.dispose(physicalHeight: _physH);
     if (_rememberDetachedWindowPlacement) {
-      _saveWindowRect();
+      if (_lastSavedRect != null) {
+        _saveWindowPreferencesSync(
+          rectForCurrentDevice: Map<String, int>.from(_lastSavedRect!),
+        );
+      }
+      unawaited(_saveWindowRect());
     } else {
-      _detachedWindowRects.remove(_deviceKey);
-      unawaited(_saveWindowPreferences());
+      _saveWindowPreferencesSync(removeCurrentDevice: true);
+      unawaited(_saveWindowPreferences(removeCurrentDevice: true));
     }
     _eventSub?.cancel();
     HardwareKeyboard.instance.removeHandler(_onKey);
     super.dispose();
   }
 
-  String get _deviceKey => widget.deviceId.toString();
+  String get _legacyDeviceKey => widget.deviceId.toString();
+  String get _deviceKey => _serial.isNotEmpty ? _serial : _legacyDeviceKey;
 
   Map<String, int>? _normalizeWindowRect(
     Map<String, int>? rect,
@@ -87,9 +96,34 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
     return {'x': x, 'y': y, 'width': width, 'height': height};
   }
 
+  Map<String, Map<String, int>> _parseDetachedRects(dynamic rawRects) {
+    final parsed = <String, Map<String, int>>{};
+    if (rawRects is! Map) return parsed;
+    for (final entry in rawRects.entries) {
+      final rect = entry.value;
+      if (rect is! Map) continue;
+      parsed[entry.key.toString()] = {
+        'x': (rect['x'] as num?)?.toInt() ?? 0,
+        'y': (rect['y'] as num?)?.toInt() ?? 0,
+        'width': (rect['width'] as num?)?.toInt() ?? 0,
+        'height': (rect['height'] as num?)?.toInt() ?? 0,
+      };
+    }
+    return parsed;
+  }
+
+  bool _sameRect(Map<String, int>? a, Map<String, int>? b) {
+    if (a == null || b == null) return a == b;
+    return a['x'] == b['x'] &&
+        a['y'] == b['y'] &&
+        a['width'] == b['width'] &&
+        a['height'] == b['height'];
+  }
+
   Future<bool> _restoreWindowRect() async {
     if (!_rememberDetachedWindowPlacement) return false;
-    final rect = _detachedWindowRects[_deviceKey];
+    final rect = _detachedWindowRects[_deviceKey] ??
+        (_serial.isEmpty ? _detachedWindowRects[_legacyDeviceKey] : null);
     if (rect == null) return false;
     try {
       final bounds = await PlatformBridge.instance.getDisplayBounds();
@@ -108,23 +142,72 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
   }
 
   Future<void> _saveWindowRect() async {
-    if (!_rememberDetachedWindowPlacement) return;
     try {
       final rect = await PlatformBridge.instance.getWindowRect();
       if (rect == null) return;
       final bounds = await PlatformBridge.instance.getDisplayBounds();
       final normalized = _normalizeWindowRect(rect, bounds);
       if (normalized == null) return;
-      _detachedWindowRects[_deviceKey] = normalized;
-      await _saveWindowPreferences();
+      if (_sameRect(_lastSavedRect, normalized)) return;
+      await _saveWindowPreferences(rectForCurrentDevice: normalized);
+      _lastSavedRect = Map<String, int>.from(normalized);
     } catch (_) {}
   }
 
-  Future<void> _saveWindowPreferences() async {
+  Future<void> _saveWindowPreferences({
+    Map<String, int>? rectForCurrentDevice,
+    bool removeCurrentDevice = false,
+  }) async {
     final data = await Persistence.instance.load();
-    data['rememberDetachedWindowPlacement'] = _rememberDetachedWindowPlacement;
-    data['detachedWindowRects'] = _detachedWindowRects;
+    final remember =
+        data['rememberDetachedWindowPlacement'] as bool? ?? _rememberDetachedWindowPlacement;
+    final mergedRects = _parseDetachedRects(data['detachedWindowRects']);
+
+    if (!remember || removeCurrentDevice) {
+      mergedRects.remove(_legacyDeviceKey);
+      if (_serial.isNotEmpty) {
+        mergedRects.remove(_serial);
+      }
+    } else if (rectForCurrentDevice != null) {
+      mergedRects[_deviceKey] = Map<String, int>.from(rectForCurrentDevice);
+      if (_serial.isNotEmpty) {
+        mergedRects.remove(_legacyDeviceKey);
+      }
+    }
+
+    data['rememberDetachedWindowPlacement'] = remember;
+    data['detachedWindowRects'] = mergedRects;
     await Persistence.instance.save(data);
+    _rememberDetachedWindowPlacement = remember;
+    _detachedWindowRects = mergedRects;
+  }
+
+  void _saveWindowPreferencesSync({
+    Map<String, int>? rectForCurrentDevice,
+    bool removeCurrentDevice = false,
+  }) {
+    final data = Persistence.instance.loadSync();
+    final remember =
+        data['rememberDetachedWindowPlacement'] as bool? ?? _rememberDetachedWindowPlacement;
+    final mergedRects = _parseDetachedRects(data['detachedWindowRects']);
+
+    if (!remember || removeCurrentDevice) {
+      mergedRects.remove(_legacyDeviceKey);
+      if (_serial.isNotEmpty) {
+        mergedRects.remove(_serial);
+      }
+    } else if (rectForCurrentDevice != null) {
+      mergedRects[_deviceKey] = Map<String, int>.from(rectForCurrentDevice);
+      if (_serial.isNotEmpty) {
+        mergedRects.remove(_legacyDeviceKey);
+      }
+    }
+
+    data['rememberDetachedWindowPlacement'] = remember;
+    data['detachedWindowRects'] = mergedRects;
+    Persistence.instance.saveSync(data);
+    _rememberDetachedWindowPlacement = remember;
+    _detachedWindowRects = mergedRects;
   }
 
   Future<void> _init() async {
@@ -143,24 +226,22 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
       final raw = data['deviceAliases'] as Map<String, dynamic>? ?? {};
       context.read<AppState>().setDeviceAliasMap(raw.map((k, v) => MapEntry(k, v.toString())));
     }
-    if (data.containsKey('customControls')) {
+    if (data.containsKey('customControlActions')) {
+      final raw = data['customControlActions'] as List<dynamic>? ?? [];
+      context.read<AppState>().setCustomControlActions(
+        raw
+            .map((e) => CustomControlAction.fromJson(
+                  Map<String, dynamic>.from(e as Map),
+                ))
+            .toList(),
+      );
+    } else if (data.containsKey('customControls')) {
       final raw = data['customControls'] as Map<String, dynamic>? ?? {};
       context.read<AppState>().setCustomControls(raw.map((k, v) => MapEntry(k, v.toString())));
     }
     _rememberDetachedWindowPlacement =
         data['rememberDetachedWindowPlacement'] as bool? ?? true;
-    final rawRects = data['detachedWindowRects'] as Map<String, dynamic>? ?? {};
-    _detachedWindowRects = {};
-    for (final entry in rawRects.entries) {
-      final rect = entry.value;
-      if (rect is! Map) continue;
-      _detachedWindowRects[entry.key] = {
-        'x': (rect['x'] as num?)?.toInt() ?? 0,
-        'y': (rect['y'] as num?)?.toInt() ?? 0,
-        'width': (rect['width'] as num?)?.toInt() ?? 0,
-        'height': (rect['height'] as num?)?.toInt() ?? 0,
-      };
-    }
+    _detachedWindowRects = _parseDetachedRects(data['detachedWindowRects']);
 
     setState(() => _status = '初始化 D3D11...');
     await bridge.init();
@@ -171,7 +252,15 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
     await bridge.connect(widget.host);
     HardwareKeyboard.instance.addHandler(_onKey);
 
+    _startWindowRectAutosave();
     _updateTitle();
+  }
+
+  void _startWindowRectAutosave() {
+    unawaited(_saveWindowRect());
+    _windowRectSaveTimer ??= Timer.periodic(const Duration(milliseconds: 250), (_) {
+      unawaited(_saveWindowRect());
+    });
   }
 
   String _alias = '';
@@ -245,6 +334,17 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
 
       final phase = (d['phase'] as String? ?? '').toLowerCase();
       _serial = d['serial'] as String? ?? '';
+      if (_serial.isNotEmpty) {
+        final legacyRect = _detachedWindowRects[_legacyDeviceKey];
+        if (legacyRect != null && !_detachedWindowRects.containsKey(_serial)) {
+          _detachedWindowRects[_serial] = Map<String, int>.from(legacyRect);
+          unawaited(
+            _saveWindowPreferences(
+              rectForCurrentDevice: Map<String, int>.from(legacyRect),
+            ),
+          );
+        }
+      }
       if (_alias.isEmpty && _serial.isNotEmpty) {
         _alias = context.read<AppState>().getDeviceAlias(_serial);
       }
@@ -289,52 +389,49 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
   }
 
   void _handleScroll(double cx, double cy, double dy) {
-    final state = context.read<AppState>();
-    final cmd = state.customControls['scroll'] ?? 'default';
-    if (cmd != 'default') {
-      _executeCustomControl('scroll', cx, cy);
-      return;
+    final handled = _executeTriggerActions(
+      'mouse_wheel',
+      cx,
+      cy,
+      scrollDelta: dy,
+    );
+    if (!handled) {
+      _wheelMapper.handle(x: cx, y: cy, deltaY: dy, physicalHeight: _physH);
     }
-    _wheelMapper.handle(x: cx, y: cy, deltaY: dy, physicalHeight: _physH);
   }
 
   bool _onKey(KeyEvent event) {
     if (event is KeyUpEvent) return false;
     final key = event.logicalKey;
     final hw = HardwareKeyboard.instance;
-    final state = context.read<AppState>();
 
     if ((key == LogicalKeyboardKey.keyV) && (hw.isControlPressed || hw.isMetaPressed)) {
-      final cmd = state.customControls['paste'] ?? 'default';
-      if (cmd != 'default') {
-        _executeCustomControl('paste', 0, 0);
-        return true;
-      }
+      if (_executeTriggerActions('shortcut:paste', 0, 0)) return true;
       _paste(); return true;
     }
-    if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) {
-      final cmd = state.customControls['enter'] ?? 'key:66';
-      if (cmd != 'default') {
-        _executeCustomControl('enter', 0, 0);
+    if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter ||
+        key == LogicalKeyboardKey.space) {
+      if (_executeTriggerActions('key:enter', 0, 0) && key != LogicalKeyboardKey.space) {
         return true;
       }
-      PlatformBridge.instance.sendKey(widget.deviceId, 66); return true;
-    }
-    if (key == LogicalKeyboardKey.space) {
-      final cmd = state.customControls['space'] ?? 'key:66';
-      if (cmd != 'default') {
-        _executeCustomControl('space', 0, 0);
+      if (key == LogicalKeyboardKey.space &&
+          _executeTriggerActions('key:space', 0, 0)) {
         return true;
       }
-      PlatformBridge.instance.sendKey(widget.deviceId, 66); return true;
+      PlatformBridge.instance.sendKey(
+        widget.deviceId,
+        key == LogicalKeyboardKey.space ? 62 : 66,
+      );
+      return true;
     }
     if (key == LogicalKeyboardKey.backspace) {
-      final cmd = state.customControls['backspace'] ?? 'key:67';
-      if (cmd != 'default') {
-        _executeCustomControl('backspace', 0, 0);
-        return true;
-      }
+      if (_executeTriggerActions('key:backspace', 0, 0)) return true;
       PlatformBridge.instance.sendKey(widget.deviceId, 67); return true;
+    }
+    final customTrigger = _keyTrigger(key);
+    if (customTrigger != null &&
+        _executeTriggerActions(customTrigger, 0, 0)) {
+      return true;
     }
     final ch = event.character;
     if (ch != null && ch.isNotEmpty && !hw.isControlPressed && !hw.isMetaPressed) {
@@ -374,6 +471,7 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
       final initH = (initW * den / num).round() + 22;
       PlatformBridge.instance.setWindowSize(initW, initH);
     }
+    _startWindowRectAutosave();
   }
 
   DeviceState get _deviceState => DeviceState(
@@ -459,23 +557,99 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
     _dragCurrent = null;
   }
 
-  void _executeCustomControl(String controlKey, double x, double y) {
-    final state = context.read<AppState>();
-    final cmd = state.customControls[controlKey] ?? 'default';
-    if (cmd == 'default') return;
+  String? _keyTrigger(LogicalKeyboardKey key) {
+    final label = key.keyLabel.trim().toLowerCase();
+    if (label.isEmpty) return null;
+    return 'key:$label';
+  }
 
-    if (cmd.startsWith('key:')) {
-      final keycode = int.tryParse(cmd.substring(4)) ?? 0;
-      if (keycode > 0) PlatformBridge.instance.sendKey(widget.deviceId, keycode);
-    } else if (cmd.startsWith('adb:')) {
-      final adbCmd = cmd.substring(4);
-      PlatformBridge.instance.sendInput({
-        'type': 'run_shortcut',
-        'device_id': widget.deviceId,
-        'shortcut_type': 'adb',
-        'command': adbCmd,
-      });
+  bool _executeTriggerActions(
+    String trigger,
+    double x,
+    double y, {
+    double? scrollDelta,
+  }) {
+    final actions = context
+        .read<AppState>()
+        .resolveControlActionsByTrigger(trigger);
+    if (actions.isEmpty) return false;
+    for (final action in actions) {
+      final cmd = action.command.trim();
+      if (cmd == CustomControlAction.cmdTouchDrag) continue;
+      _executeControlCommand(
+        cmd,
+        x: x,
+        y: y,
+        scrollDelta: scrollDelta,
+      );
     }
+    return true;
+  }
+
+  bool _hasTouchDragBinding() {
+    final actions = context
+        .read<AppState>()
+        .resolveControlActionsByTrigger('mouse_left');
+    if (actions.isEmpty) return true;
+    return actions.any(
+      (action) => action.command.trim() == CustomControlAction.cmdTouchDrag,
+    );
+  }
+
+  void _executeControlCommand(
+    String command, {
+    required double x,
+    required double y,
+    double? scrollDelta,
+  }) {
+    final cmd = command.trim();
+    final lower = cmd.toLowerCase();
+    if (lower == CustomControlAction.cmdTapHere) {
+      PlatformBridge.instance.sendTap(widget.deviceId, x, y);
+      return;
+    }
+    if (lower == CustomControlAction.cmdDoubleTapHere) {
+      PlatformBridge.instance.sendTap(widget.deviceId, x, y);
+      Future.delayed(const Duration(milliseconds: 80), () {
+        PlatformBridge.instance.sendTap(widget.deviceId, x, y);
+      });
+      return;
+    }
+    if (lower == CustomControlAction.cmdScrollNative) {
+      final delta = scrollDelta ?? 0;
+      if (delta.abs() > 0.1) {
+        PlatformBridge.instance.sendScroll(widget.deviceId, x, y, delta);
+      }
+      return;
+    }
+    if (lower == CustomControlAction.cmdPasteText) {
+      _paste();
+      return;
+    }
+    if (lower.startsWith('key:')) {
+      final keyCode = int.tryParse(lower.substring(4));
+      if (keyCode != null && keyCode > 0) {
+        PlatformBridge.instance.sendKey(widget.deviceId, keyCode);
+      }
+      return;
+    }
+    if (lower.startsWith('adb:')) {
+      final adbCommand = cmd.substring(4).trim();
+      if (adbCommand.isEmpty) return;
+      PlatformBridge.instance.sendInput({
+        'type': 'run_action',
+        'device_id': widget.deviceId,
+        'action_type': ShortcutAction.adbCommand,
+        'command': adbCommand,
+      });
+      return;
+    }
+    PlatformBridge.instance.sendInput({
+      'type': 'run_action',
+      'device_id': widget.deviceId,
+      'action_type': ShortcutAction.adbCommand,
+      'command': cmd,
+    });
   }
 
   Widget _buildGestureLayer(double ww, double wh) {
@@ -492,33 +666,21 @@ class _SingleDeviceScreenState extends State<SingleDeviceScreen> {
         }
       },
       onPointerDown: (e) {
-        final state = context.read<AppState>();
         final x = _toX(e.localPosition.dx, ww).toDouble();
         final y = _toY(e.localPosition.dy, wh).toDouble();
 
         if (e.buttons == kSecondaryMouseButton) {
-          final cmd = state.customControls['mouseRight'] ?? 'key:4';
-          if (cmd != 'default') {
-            _executeCustomControl('mouseRight', x, y);
-            return;
-          }
+          if (_executeTriggerActions('mouse_right', x, y)) return;
           PlatformBridge.instance.sendKey(widget.deviceId, 4);
         } else if (e.buttons == kMiddleMouseButton) {
-          final cmd = state.customControls['mouseMiddle'] ?? 'default';
-          if (cmd != 'default') {
-            _executeCustomControl('mouseMiddle', x, y);
-            return;
-          }
+          if (_executeTriggerActions('mouse_middle', x, y)) return;
           PlatformBridge.instance.sendTap(widget.deviceId, x, y);
           Future.delayed(const Duration(milliseconds: 80), () {
             PlatformBridge.instance.sendTap(widget.deviceId, x, y);
           });
         } else if (e.buttons == kPrimaryMouseButton) {
-          final cmd = state.customControls['mouseLeft'] ?? 'default';
-          if (cmd != 'default') {
-            _executeCustomControl('mouseLeft', x, y);
-            return;
-          }
+          _executeTriggerActions('mouse_left', x, y);
+          if (!_hasTouchDragBinding()) return;
           _wheelMapper.release(physicalHeight: _physH);
           _dragStart = e.localPosition;
           _dragCurrent = e.localPosition;

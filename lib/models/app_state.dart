@@ -1,6 +1,7 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'adb_command_preset.dart';
+import 'shortcut_icon_catalog.dart';
 import '../services/platform_bridge.dart';
 
 enum ServerConnectionState { disconnected, connecting, connected, reconnecting }
@@ -10,49 +11,298 @@ enum DevicePhase { offline, starting, online, locked, failed }
 class ShortcutAction {
   final String label;
   final String icon;
-  final String type; // 'app' or 'adb'
+  final String actionType;
   final String command;
+  final Map<String, dynamic> args;
   final String? deviceSerial; // null means global
 
-  const ShortcutAction({required this.label, this.icon = 'apps', this.type = 'app', required this.command, this.deviceSerial});
+  static const String appLaunch = 'app_launch';
+  static const String adbCommand = 'adb_command';
+  static const String tap = 'tap';
+  static const String middle = 'middle';
+  static const String swipeUp = 'swipe_up';
+  static const String swipeDown = 'swipe_down';
+  static const String enter = 'enter';
+  static const Set<String> supportedTypes = {appLaunch, adbCommand};
 
-  Map<String, dynamic> toJson() => {'label': label, 'icon': icon, 'type': type, 'command': command, 'deviceSerial': deviceSerial};
+  const ShortcutAction({
+    required this.label,
+    this.icon = 'apps',
+    this.actionType = appLaunch,
+    this.command = '',
+    this.args = const {},
+    this.deviceSerial,
+  });
 
-  factory ShortcutAction.fromJson(Map<String, dynamic> j) => ShortcutAction(
-    label: j['label'] as String? ?? '',
-    icon: j['icon'] as String? ?? 'apps',
-    type: j['type'] as String? ?? 'app',
-    command: j['command'] as String? ?? '',
-    deviceSerial: j['deviceSerial'] as String?,
-  );
+  factory ShortcutAction.fromJson(Map<String, dynamic> j) {
+    final actionTypeRaw =
+        (j['actionType'] ?? j['action_type'] ?? j['type'] ?? appLaunch).toString();
+    final normalizedType = normalizeActionType(actionTypeRaw);
+    final parsedArgs = <String, dynamic>{};
+    final rawArgs = j['args'] ?? j['arguments'];
+    if (rawArgs is Map) {
+      for (final entry in rawArgs.entries) {
+        parsedArgs[entry.key.toString()] = entry.value;
+      }
+    }
+    final cmd = (j['command'] as String? ?? '').trim();
+    if (parsedArgs.isEmpty && cmd.isNotEmpty) {
+      if (normalizedType == appLaunch) {
+        parsedArgs['package'] = cmd;
+      } else if (normalizedType == adbCommand) {
+        parsedArgs['command'] = cmd;
+      }
+    }
+
+    return ShortcutAction(
+      label: (j['label'] as String? ?? '').trim(),
+      icon: (j['icon'] as String? ?? 'apps').trim(),
+      actionType: normalizedType,
+      command: cmd,
+      args: parsedArgs,
+      deviceSerial: (j['deviceSerial'] as String?)?.trim().isEmpty == true
+          ? null
+          : j['deviceSerial'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'label': label,
+    'icon': icon,
+    'actionType': actionType,
+    'command': commandForLegacy,
+    'args': args,
+    // Backward compatibility for old clients/state readers.
+    'type': legacyShortcutType,
+    'deviceSerial': deviceSerial,
+  };
+
+  static String normalizeActionType(String rawType) {
+    switch (rawType.toLowerCase()) {
+      case 'app':
+      case 'app_launch':
+      case 'launch_app':
+        return appLaunch;
+      case 'adb':
+      case 'adb_command':
+      case 'command':
+        return adbCommand;
+      case 'tap':
+      case 'left_click':
+      case 'mouse_left':
+        return tap;
+      case 'middle':
+      case 'middle_click':
+      case 'mouse_middle':
+        return middle;
+      case 'swipe_up':
+      case 'up_swipe':
+        return swipeUp;
+      case 'swipe_down':
+      case 'down_swipe':
+        return swipeDown;
+      case 'enter':
+        return enter;
+      default:
+        return rawType.toLowerCase();
+    }
+  }
+
+  static bool isSupportedType(String actionType) {
+    return supportedTypes.contains(actionType);
+  }
+
+  String get legacyShortcutType => actionType == appLaunch ? 'app' : 'adb';
+
+  String get commandKey {
+    return switch (actionType) {
+      appLaunch => 'package',
+      adbCommand => 'command',
+      _ => 'command',
+    };
+  }
+
+  String get commandForLegacy {
+    final cmd = command.trim();
+    if (cmd.isNotEmpty) return cmd;
+    final fromArgs = args[commandKey];
+    return fromArgs is String ? fromArgs.trim() : '';
+  }
+
+  bool get requiresCommand => actionType == appLaunch || actionType == adbCommand;
+
+  Map<String, dynamic> toActionPayload() {
+    return {
+      'action_type': actionType,
+      'command': commandForLegacy,
+      if (args.isNotEmpty) 'args': args,
+    };
+  }
 
   static const List<ShortcutAction> defaults = [
-    ShortcutAction(label: 'Chrome', icon: 'language', type: 'app', command: 'com.android.chrome'),
-    ShortcutAction(label: 'WhatsApp', icon: 'chat', type: 'app', command: 'com.whatsapp'),
-    ShortcutAction(label: 'Camera', icon: 'camera_alt', type: 'app', command: 'com.sec.android.app.camera'),
-    ShortcutAction(label: 'Settings', icon: 'settings', type: 'app', command: 'com.android.settings'),
+    ShortcutAction(label: 'Chrome', icon: 'language', actionType: appLaunch, command: 'com.android.chrome'),
+    ShortcutAction(label: 'WhatsApp', icon: 'chat', actionType: appLaunch, command: 'com.whatsapp'),
+    ShortcutAction(label: 'Camera', icon: 'camera_alt', actionType: appLaunch, command: 'com.sec.android.app.camera'),
+    ShortcutAction(label: 'Settings', icon: 'settings', actionType: appLaunch, command: 'com.android.settings'),
   ];
 
   static IconData iconData(String name) {
-    const map = {
-      'language': Icons.language, 'chat': Icons.chat, 'camera_alt': Icons.camera_alt,
-      'settings': Icons.settings, 'apps': Icons.apps, 'phone': Icons.phone,
-      'message': Icons.message, 'map': Icons.map, 'shopping_cart': Icons.shopping_cart,
-      'music_note': Icons.music_note, 'video_call': Icons.video_call, 'terminal': Icons.terminal,
-      'play_arrow': Icons.play_arrow, 'folder': Icons.folder, 'email': Icons.email,
-      'search': Icons.search, 'home': Icons.home, 'star': Icons.star,
-      'send': Icons.send, 'account_balance_wallet': Icons.account_balance_wallet,
-      'qr_code': Icons.qr_code, 'payments': Icons.payments,
-      'photo': Icons.photo, 'file_download': Icons.file_download,
-      'notifications': Icons.notifications, 'bookmark': Icons.bookmark,
-      'share': Icons.share, 'cloud': Icons.cloud,
-      'power_settings_new': Icons.power_settings_new, 'toggle_on': Icons.toggle_on,
-      'location_on': Icons.location_on, 'gps_fixed': Icons.gps_fixed,
-      'navigation': Icons.navigation, 'near_me': Icons.near_me,
-      'wifi': Icons.wifi, 'bluetooth': Icons.bluetooth,
-      'flashlight_on': Icons.flashlight_on, 'dark_mode': Icons.dark_mode,
-    };
-    return map[name] ?? Icons.apps;
+    return ShortcutIconCatalog.iconData(name);
+  }
+
+  static List<String> get iconKeys => ShortcutIconCatalog.defaultKeys;
+}
+
+class CustomControlAction {
+  const CustomControlAction({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.command,
+    required this.bindings,
+    required this.builtIn,
+  });
+
+  final String id;
+  final String name;
+  final String description;
+  final String command;
+  final List<String> bindings;
+  final bool builtIn;
+
+  static const String cmdTouchDrag = 'touch_drag';
+  static const String cmdTapHere = 'tap_here';
+  static const String cmdDoubleTapHere = 'double_tap_here';
+  static const String cmdScrollNative = 'scroll_native';
+  static const String cmdPasteText = 'paste_text';
+
+  static const List<CustomControlAction> defaults = [
+    CustomControlAction(
+      id: 'touch_drag',
+      name: '拖曳 / 點擊',
+      description: '主要觸控拖曳與點擊操作',
+      command: cmdTouchDrag,
+      bindings: ['mouse_left'],
+      builtIn: true,
+    ),
+    CustomControlAction(
+      id: 'android_back',
+      name: '返回',
+      description: '送出 Android 返回鍵',
+      command: 'key:4',
+      bindings: ['mouse_right'],
+      builtIn: true,
+    ),
+    CustomControlAction(
+      id: 'middle_double_tap',
+      name: '中鍵雙擊',
+      description: '在游標位置送出雙擊',
+      command: cmdDoubleTapHere,
+      bindings: ['mouse_middle'],
+      builtIn: true,
+    ),
+    CustomControlAction(
+      id: 'wheel_scroll',
+      name: '滾輪捲動',
+      description: '使用滾輪觸發原生捲動注入',
+      command: cmdScrollNative,
+      bindings: ['mouse_wheel'],
+      builtIn: true,
+    ),
+    CustomControlAction(
+      id: 'enter_key',
+      name: 'Enter',
+      description: '送出 Android Enter',
+      command: 'key:66',
+      bindings: ['key:enter'],
+      builtIn: true,
+    ),
+    CustomControlAction(
+      id: 'space_key',
+      name: 'Space',
+      description: '送出 Android Space',
+      command: 'key:62',
+      bindings: ['key:space'],
+      builtIn: true,
+    ),
+    CustomControlAction(
+      id: 'backspace_key',
+      name: 'Backspace',
+      description: '送出 Android Backspace',
+      command: 'key:67',
+      bindings: ['key:backspace'],
+      builtIn: true,
+    ),
+    CustomControlAction(
+      id: 'paste_clipboard',
+      name: '貼上剪貼簿',
+      description: '將電腦剪貼簿文字貼到裝置',
+      command: cmdPasteText,
+      bindings: ['shortcut:paste'],
+      builtIn: true,
+    ),
+  ];
+
+  factory CustomControlAction.fromJson(Map<String, dynamic> j) {
+    final rawBindings = j['bindings'];
+    final bindings = <String>[];
+    if (rawBindings is List) {
+      for (final item in rawBindings) {
+        final normalized = normalizeBinding(item.toString());
+        if (normalized.isNotEmpty && !bindings.contains(normalized)) {
+          bindings.add(normalized);
+        }
+      }
+    }
+    if (bindings.isEmpty) {
+      final legacy = normalizeBinding((j['binding'] ?? '').toString());
+      if (legacy.isNotEmpty) bindings.add(legacy);
+    }
+    return CustomControlAction(
+      id: (j['id'] ?? '').toString().trim(),
+      name: (j['name'] ?? '').toString().trim(),
+      description: (j['description'] ?? '').toString().trim(),
+      command: (j['command'] ?? '').toString().trim(),
+      bindings: bindings,
+      builtIn: j['builtIn'] == true || j['builtin'] == true,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'description': description,
+    'command': command,
+    'bindings': bindings,
+    'builtIn': builtIn,
+  };
+
+  CustomControlAction copyWith({
+    String? id,
+    String? name,
+    String? description,
+    String? command,
+    List<String>? bindings,
+    bool? builtIn,
+  }) {
+    return CustomControlAction(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      description: description ?? this.description,
+      command: command ?? this.command,
+      bindings: bindings ?? this.bindings,
+      builtIn: builtIn ?? this.builtIn,
+    );
+  }
+
+  static String normalizeBinding(String raw) {
+    final v = raw.trim().toLowerCase();
+    if (v.isEmpty) return '';
+    if (v == 'ctrl+v' || v == 'cmd+v') return 'shortcut:paste';
+    if (v == 'enter') return 'key:enter';
+    if (v == 'space') return 'key:space';
+    if (v == 'backspace') return 'key:backspace';
+    return v;
   }
 }
 
@@ -166,26 +416,29 @@ class AppState extends ChangeNotifier {
   Map<String, String> _deviceQuality = {};  // serial → 'hd' or 'fhd'
   Map<String, String> _deviceAliases = {};  // serial → alias
   List<ShortcutAction> _shortcuts = List.of(ShortcutAction.defaults);
+  List<AdbCommandPreset> _adbCommandPresets = List.of(AdbCommandPreset.defaults);
+  List<CustomControlAction> _customControlActions =
+      List.of(CustomControlAction.defaults);
   bool _rememberMainWindowPlacement = true;
   bool _rememberDetachedWindowPlacement = true;
   Map<String, int>? _mainWindowRect;
   Map<String, Map<String, int>> _detachedWindowRects = {};
   Map<String, String> _customControls = {
-    'mouseLeft': 'default',
-    'mouseMiddle': 'default',
+    'mouseLeft': CustomControlAction.cmdTouchDrag,
+    'mouseMiddle': CustomControlAction.cmdDoubleTapHere,
     'mouseRight': 'key:4',
-    'scroll': 'default',
+    'scroll': CustomControlAction.cmdScrollNative,
     'enter': 'key:66',
-    'space': 'key:66',
+    'space': 'key:62',
     'backspace': 'key:67',
-    'paste': 'default',
+    'paste': CustomControlAction.cmdPasteText,
   };
 
   ServerConnectionState get connection => _connection;
   List<DeviceState> get devices => List.unmodifiable(_devices);
-  /// Only devices not hidden AND streaming. Grid uses this.
+  /// Only devices not hidden. Offline cards remain visible for stable ordering.
   List<DeviceState> get visibleDevices =>
-      _devices.where((d) => !_hiddenSerials.contains(d.serial) && d.textureId != null).toList();
+      _devices.where((d) => !_hiddenSerials.contains(d.serial)).toList();
   int? get focusedDeviceId => _focusedDeviceId;
   GridConfig get gridConfig => _gridConfig;
   Set<int> get selectedDeviceIds => Set.unmodifiable(_selectedDeviceIds);
@@ -207,6 +460,10 @@ class AppState extends ChangeNotifier {
   String getDeviceQuality(String serial) => _deviceQuality[serial] ?? 'hd';
   Map<String, String> get deviceAliases => Map.unmodifiable(_deviceAliases);
   List<ShortcutAction> get shortcuts => List.unmodifiable(_shortcuts);
+  List<AdbCommandPreset> get adbCommandPresets =>
+      List.unmodifiable(_adbCommandPresets);
+  List<CustomControlAction> get customControlActions =>
+      List.unmodifiable(_customControlActions);
   Map<String, String> get customControls => Map.unmodifiable(_customControls);
 
   void setRememberMainWindowPlacement(bool enabled) {
@@ -250,12 +507,138 @@ class AppState extends ChangeNotifier {
 
   void setCustomControls(Map<String, String> map) {
     _customControls = Map.from(map);
+    _customControlActions = _applyLegacyCustomControls(
+      _customControlActions,
+      _customControls,
+    );
     notifyListeners();
   }
 
   void setShortcuts(List<ShortcutAction> list) {
-    _shortcuts = List.of(list);
+    _shortcuts = list
+        .where((item) => ShortcutAction.isSupportedType(item.actionType))
+        .toList(growable: false);
     notifyListeners();
+  }
+
+  void setAdbCommandPresets(List<AdbCommandPreset> list) {
+    _adbCommandPresets = List.of(list);
+    notifyListeners();
+  }
+
+  List<CustomControlAction> resolveControlActionsByTrigger(String trigger) {
+    final normalized = CustomControlAction.normalizeBinding(trigger);
+    if (normalized.isEmpty) return const [];
+    return _customControlActions
+        .where((item) => item.bindings.contains(normalized))
+        .toList(growable: false);
+  }
+
+  void setCustomControlActions(List<CustomControlAction> list) {
+    final merged = _normalizeControlActions(list);
+    _customControlActions = merged;
+    _customControls = _buildLegacyCustomControls(merged);
+    notifyListeners();
+  }
+
+  List<CustomControlAction> _normalizeControlActions(
+    List<CustomControlAction> list,
+  ) {
+    final byId = <String, CustomControlAction>{};
+    for (final item in list) {
+      final id = item.id.trim();
+      if (id.isEmpty) continue;
+      final uniqueBindings = <String>[];
+      for (final binding in item.bindings) {
+        final normalized = CustomControlAction.normalizeBinding(binding);
+        if (normalized.isNotEmpty && !uniqueBindings.contains(normalized)) {
+          uniqueBindings.add(normalized);
+        }
+      }
+      byId[id] = item.copyWith(
+        id: id,
+        bindings: uniqueBindings,
+      );
+    }
+
+    final result = <CustomControlAction>[];
+    for (final builtin in CustomControlAction.defaults) {
+      final current = byId.remove(builtin.id);
+      result.add(
+        (current ?? builtin).copyWith(
+          id: builtin.id,
+          name: builtin.name,
+          description: builtin.description,
+          builtIn: true,
+          bindings: (current?.bindings.isNotEmpty == true)
+              ? current!.bindings
+              : builtin.bindings,
+          command: (current?.command.trim().isNotEmpty == true)
+              ? current!.command.trim()
+              : builtin.command,
+        ),
+      );
+    }
+
+    for (final custom in byId.values) {
+      if (custom.builtIn) continue;
+      if (custom.name.trim().isEmpty) continue;
+      if (custom.command.trim().isEmpty) continue;
+      result.add(custom.copyWith(builtIn: false));
+    }
+    return result;
+  }
+
+  Map<String, String> _buildLegacyCustomControls(List<CustomControlAction> list) {
+    String commandOf(String id, String fallback) {
+      final action = list.where((item) => item.id == id).firstOrNull;
+      final command = action?.command.trim();
+      return (command == null || command.isEmpty) ? fallback : command;
+    }
+
+    return {
+      'mouseLeft': commandOf('touch_drag', CustomControlAction.cmdTouchDrag),
+      'mouseMiddle':
+          commandOf('middle_double_tap', CustomControlAction.cmdDoubleTapHere),
+      'mouseRight': commandOf('android_back', 'key:4'),
+      'scroll': commandOf('wheel_scroll', CustomControlAction.cmdScrollNative),
+      'enter': commandOf('enter_key', 'key:66'),
+      'space': commandOf('space_key', 'key:62'),
+      'backspace': commandOf('backspace_key', 'key:67'),
+      'paste': commandOf('paste_clipboard', CustomControlAction.cmdPasteText),
+    };
+  }
+
+  List<CustomControlAction> _applyLegacyCustomControls(
+    List<CustomControlAction> source,
+    Map<String, String> legacy,
+  ) {
+    final updated = source.map((item) {
+      String? cmd;
+      switch (item.id) {
+        case 'touch_drag':
+          cmd = legacy['mouseLeft'];
+        case 'middle_double_tap':
+          cmd = legacy['mouseMiddle'];
+        case 'android_back':
+          cmd = legacy['mouseRight'];
+        case 'wheel_scroll':
+          cmd = legacy['scroll'];
+        case 'enter_key':
+          cmd = legacy['enter'];
+        case 'space_key':
+          cmd = legacy['space'];
+        case 'backspace_key':
+          cmd = legacy['backspace'];
+        case 'paste_clipboard':
+          cmd = legacy['paste'];
+        default:
+          cmd = null;
+      }
+      if (cmd == null || cmd.trim().isEmpty) return item;
+      return item.copyWith(command: cmd.trim());
+    }).toList(growable: false);
+    return _normalizeControlActions(updated);
   }
 
   void setDeviceQuality(String serial, String quality) {
@@ -339,14 +722,21 @@ class AppState extends ChangeNotifier {
 
     if ((state == ServerConnectionState.disconnected || state == ServerConnectionState.reconnecting) &&
         previous == ServerConnectionState.connected) {
-      _clearAllDevices();
+      _markAllDevicesOffline();
     }
 
     notifyListeners();
   }
 
-  void _clearAllDevices() {
-    _devices.clear();
+  void _markAllDevicesOffline() {
+    for (var i = 0; i < _devices.length; i++) {
+      _devices[i] = _devices[i].copyWith(
+        phase: DevicePhase.offline,
+        textureId: null,
+        hasFrames: false,
+        isQualitySwitching: false,
+      );
+    }
     _selectedDeviceIds.clear();
     _focusedDeviceId = null;
   }
@@ -355,9 +745,25 @@ class AppState extends ChangeNotifier {
     final existing = _devices.indexWhere((d) => d.deviceId == device.deviceId);
     if (existing >= 0) {
       _devices[existing] = device;
+      _ensureDeviceOrder();
+      _sortDevicesByOrder();
+      notifyListeners();
+      return;
+    }
+    final bySerial = _devices.indexWhere((d) => d.serial == device.serial);
+    if (bySerial >= 0) {
+      _devices[bySerial] = device;
     } else {
+      if (!_deviceOrder.containsKey(device.serial)) {
+        final nextIndex = _deviceOrder.values.isEmpty
+            ? 0
+            : (_deviceOrder.values.reduce((a, b) => a > b ? a : b) + 1);
+        _deviceOrder[device.serial] = nextIndex;
+      }
       _devices.add(device);
     }
+    _ensureDeviceOrder();
+    _sortDevicesByOrder();
     notifyListeners();
   }
 
@@ -470,12 +876,23 @@ class AppState extends ChangeNotifier {
   }
 
   void _sortDevicesByOrder() {
+    _ensureDeviceOrder();
     _devices.sort((a, b) {
       final ia = _deviceOrder[a.serial] ?? 999;
       final ib = _deviceOrder[b.serial] ?? 999;
       if (ia != ib) return ia.compareTo(ib);
       return a.deviceId.compareTo(b.deviceId);
     });
+  }
+
+  void _ensureDeviceOrder() {
+    var nextIndex = _deviceOrder.values.isEmpty
+        ? 0
+        : (_deviceOrder.values.reduce((a, b) => a > b ? a : b) + 1);
+    for (final d in _devices) {
+      if (_deviceOrder.containsKey(d.serial)) continue;
+      _deviceOrder[d.serial] = nextIndex++;
+    }
   }
 
   void toggleSelection(int deviceId) {

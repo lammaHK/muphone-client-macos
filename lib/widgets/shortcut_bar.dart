@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
-import '../services/platform_bridge.dart';
+import '../services/action_dispatcher.dart' as shortcut_dispatcher;
 import '../theme/muphone_theme.dart';
 
 class ShortcutBar extends StatelessWidget {
@@ -14,13 +14,11 @@ class ShortcutBar extends StatelessWidget {
   final int deviceId;
   final DeviceState device;
 
-  void _executeShortcut(ShortcutAction action) {
-    PlatformBridge.instance.sendInput({
-      'type': 'run_shortcut',
-      'device_id': deviceId,
-      'shortcut_type': action.type,
-      'command': action.command,
-    });
+  Future<void> _executeShortcut(ShortcutAction action) async {
+    await shortcut_dispatcher.ActionDispatcher.instance.dispatchShortcut(
+      deviceId: deviceId,
+      action: action,
+    );
   }
 
   @override

@@ -169,6 +169,16 @@ class MuphoneEngine {
             msg["shortcut_type"] = args["shortcut_type"]
             msg["command"] = args["command"]
 
+        case "run_action":
+            msg["type"] = "run_action"
+            msg["device_id"] = args["device_id"]
+            msg["action_type"] = args["action_type"]
+            msg["command"] = args["command"]
+            msg["shortcut_type"] = args["shortcut_type"]
+            if msg["command"] == nil {
+                msg["command"] = args["legacy_command"]
+            }
+
         case "clipboard_set":
             msg["type"] = "clipboard_set"
             msg["device_id"] = args["device_id"]

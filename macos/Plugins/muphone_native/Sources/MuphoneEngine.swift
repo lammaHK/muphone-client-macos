@@ -11,6 +11,7 @@ class MuphoneEngine {
     private var controlClient: ControlClient?
     private var decoders: [Int: H264Decoder] = [:]
     private var textures: [Int: PixelBufferTexture] = [:]
+    private var frameReadySent: Set<Int> = []
     private var connected = false
 
     init(registrar: FlutterPluginRegistrar, emitEvent: @escaping ([String: Any]) -> Void) {
@@ -68,6 +69,7 @@ class MuphoneEngine {
 
     func subscribeDevice(deviceId: Int, width: Int, height: Int) -> Int64 {
         guard let textureRegistry = textureRegistry else { return -1 }
+        frameReadySent.remove(deviceId)
 
         // Create pixel buffer texture for Flutter
         let texture = PixelBufferTexture()
@@ -80,6 +82,13 @@ class MuphoneEngine {
             texture.updatePixelBuffer(pixelBuffer)
             DispatchQueue.main.async {
                 self.textureRegistry?.textureFrameAvailable(textureId)
+                if !self.frameReadySent.contains(deviceId) {
+                    self.frameReadySent.insert(deviceId)
+                    self.emitEvent([
+                        "event": "frame_ready",
+                        "device_id": deviceId,
+                    ])
+                }
             }
         }
         decoders[deviceId] = decoder
@@ -108,6 +117,7 @@ class MuphoneEngine {
 
     func unsubscribeDevice(deviceId: Int) {
         videoClient?.unsubscribe(deviceId: deviceId)
+        frameReadySent.remove(deviceId)
 
         if let texture = textures[deviceId] {
             textureRegistry?.unregisterTexture(texture.textureId ?? 0)
@@ -145,8 +155,8 @@ class MuphoneEngine {
         case "scroll":
             msg["type"] = "touch_event"
             msg["device_id"] = args["device_id"]
-            let delta = args["delta"] as? Double ?? 0
-            msg["action"] = delta > 0 ? "scroll_down" : "scroll_up"
+            msg["action"] = "scroll"
+            msg["delta"] = args["delta"] as? Double ?? 0
             msg["x"] = args["x"]
             msg["y"] = args["y"]
 
@@ -163,6 +173,12 @@ class MuphoneEngine {
             msg["device_id"] = args["device_id"]
             msg["keycode"] = -1
             msg["text"] = args["text"]
+
+        case "run_action":
+            msg["type"] = "run_action"
+            msg["device_id"] = args["device_id"]
+            msg["action_type"] = args["action_type"]
+            msg["command"] = args["command"]
 
         default:
             return
@@ -220,6 +236,13 @@ class MuphoneEngine {
                 "event": "lock_status",
                 "device_id": json["device_id"] ?? -1,
                 "owner": json["owner"] ?? ""
+            ])
+
+        case "device_list_error":
+            emitEvent([
+                "event": "device_list_error",
+                "message": json["message"] ?? "",
+                "retrying": json["retrying"] ?? true
             ])
 
         default:
